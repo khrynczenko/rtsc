@@ -1,0 +1,17 @@
+[package]
+name = "rtsc"
+version = "0.1.0"
+authors = ["khrynczenko <jeniopy@gmail.com>"]
+edition = "2018"
+description = "Rust compiler for the (subset of) TypeScript language."
+license = "MIT"
+homepage = "https://github.com/khrynczenko/rtsc"
+repository = "https://github.com/khrynczenko/rtsc"
+readme = "README.md"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[profile.release]
+lto = true
+
+[dependencies]
