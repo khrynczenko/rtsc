@@ -1,0 +1,33 @@
+name: rust, cargo
+
+on: [push, pull_request]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  cargo:
+    name: cargo
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: checkout repository
+      uses: actions/checkout@v2
+    - name: Cache package dependencies paths
+      uses: actions/cache@v2
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    - name: build crate
+      run: cargo build --verbose
+    - name: run tests
+      run: cargo test --verbose
+    - name: run clippy
+      run: |
+        cargo clean -p rtsc
+        cargo clippy
+    - name: check formatting
+      run: cargo fmt -- --check
