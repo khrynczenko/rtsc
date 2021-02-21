@@ -1,0 +1,20 @@
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Node {
+    Number(i32),
+    Identifier(String),
+    Not(Box<Node>),
+    Equal(Box<Node>, Box<Node>),
+    NotEqual(Box<Node>, Box<Node>),
+    Addition(Box<Node>, Box<Node>),
+    Subtraction(Box<Node>, Box<Node>),
+    Multiplication(Box<Node>, Box<Node>),
+    Division(Box<Node>, Box<Node>),
+    Call(String, Vec<Node>),
+    Return(Box<Node>),
+    Block(Vec<Node>),
+    If(Box<Node>, Box<Node>, Box<Node>),
+    Function(String, Vec<String>, Box<Node>),
+    Var(String, Box<Node>),
+    Assignment(String, Box<Node>),
+    While(Box<Node>, Box<Node>),
+}
