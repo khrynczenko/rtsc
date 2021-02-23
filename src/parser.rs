@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 type Parsed<T> = (T, Source);
 
-type ParsingFunction<T> = dyn Fn(Source) -> Option<Parsed<T>>;
+type RcParsingFunction<T> = Rc<dyn Fn(Source) -> Option<Parsed<T>>>;
 
 pub trait TParser<T> {
     fn parse(&self, source: Source) -> Option<Parsed<T>>;
@@ -33,7 +33,7 @@ impl Source {
 
 #[derive(Clone)]
 pub struct Parser<T> {
-    function: Rc<ParsingFunction<T>>,
+    function: RcParsingFunction<T>,
 }
 
 #[derive(Debug, Clone)]
@@ -43,7 +43,7 @@ pub enum OrValue<T, U> {
 }
 
 impl<T: 'static> Parser<T> {
-    pub fn new(function: Rc<ParsingFunction<T>>) -> Parser<T> {
+    pub fn new(function: RcParsingFunction<T>) -> Parser<T> {
         Parser { function }
     }
 
