@@ -1,5 +1,6 @@
-use regex::Regex;
 use std::rc::Rc;
+
+use regex::Regex;
 
 type Parsed<T> = (T, Source);
 
@@ -34,6 +35,12 @@ impl Source {
 #[derive(Clone)]
 pub struct Parser<T> {
     function: RcParsingFunction<T>,
+}
+
+impl<T: std::fmt::Debug> std::fmt::Debug for Parser<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Parser<T> { function: Source -> T }")
+    }
 }
 
 #[derive(Debug, Clone)]
