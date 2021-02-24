@@ -50,18 +50,24 @@ pub enum OrValue<T, U> {
 }
 
 impl<T: 'static> Parser<T> {
+    /// Creates a parser from a parsing function.
     pub fn new(function: RcParsingFunction<T>) -> Parser<T> {
         Parser { function }
     }
 
+    /// Create a parser that produces a constant value without
+    /// advancing the source.
     pub fn constant<U: Clone + 'static>(value: U) -> Parser<U> {
         Parser::new(Rc::new(move |source| Some((value.clone(), source))))
     }
 
+    /// Creates a parser from a given regular expression.
     pub fn regex(regex: Regex) -> Parser<String> {
         Parser::new(Rc::new(move |source| source.match_regex(&regex)))
     }
 
+    /// Given a parser creates a parser that can match zero or more times
+    /// using the aformentioned given parser.
     pub fn zero_or_more(parser: Parser<T>) -> Parser<Vec<T>> {
         Parser::new(Rc::new(move |source| {
             let mut results = Vec::new();
@@ -78,10 +84,13 @@ impl<T: 'static> Parser<T> {
         }))
     }
 
+    /// Creates a parser that panics when used.
     pub fn panic() -> Parser<()> {
         panic!();
     }
 
+    /// Creates a parser from two different parsers and tries to match on
+    /// the first one. If first one does not match tries the second one.
     pub fn or<U: 'static>(self, rhs: Parser<U>) -> Parser<OrValue<T, U>> {
         Parser::new(Rc::new(move |source| {
             let parsed = self.parse(source.clone());
@@ -95,16 +104,20 @@ impl<T: 'static> Parser<T> {
         }))
     }
 
+    /// Creates a parser from two different parsers and tries to match on
+    /// the first one and then the scond one. Both must match in that order.
     pub fn and<U: Clone + 'static>(self, rhs: Parser<U>) -> Parser<U> {
         self.bind(Rc::new(move |_| rhs.clone()))
     }
 
+    /// Replaces the value produced by a parser.
     pub fn map<U: Clone + 'static>(self, callback: Rc<dyn Fn(T) -> U>) -> Parser<U> {
         Parser::new(Rc::new(move |source| {
             self.parse(source).map(|(v, s)| (callback(v), s))
         }))
     }
 
+    /// Binds value to a parser.
     pub fn bind<U: 'static>(self, callback: Rc<dyn Fn(T) -> Parser<U>>) -> Parser<U> {
         Parser::new(Rc::new(move |source| {
             let (value, new_source) = self.parse(source)?;
