@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use regex::Regex;
 
-type Parsed<T> = (T, Source);
+pub type Parsed<T> = (T, Source);
 
 type RcParsingFunction<T> = Rc<dyn Fn(Source) -> Option<Parsed<T>>>;
 
@@ -10,12 +10,16 @@ pub trait TParser<T> {
     fn parse(&self, source: Source) -> Option<Parsed<T>>;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Source {
     remaining: String,
 }
 
 impl Source {
+    pub fn new(source: String) -> Source {
+        Source { remaining: source }
+    }
+
     pub fn match_regex(self, regex: &Regex) -> Option<Parsed<String>> {
         // We should always try to match on the beginning of the source string
         assert!(regex.as_str().chars().take(1).next().unwrap() == '^');
@@ -47,6 +51,20 @@ impl<T: std::fmt::Debug> std::fmt::Debug for Parser<T> {
 pub enum OrValue<T, U> {
     Lhs(T),
     Rhs(U),
+}
+
+impl<T, U> PartialEq for OrValue<T, U>
+where
+    T: PartialEq,
+    U: PartialEq,
+{
+    fn eq(&self, rhs: &OrValue<T, U>) -> bool {
+        match (self, rhs) {
+            (OrValue::Lhs(x), OrValue::Lhs(y)) => x == y,
+            (OrValue::Rhs(x), OrValue::Rhs(y)) => x == y,
+            (_, _) => false,
+        }
+    }
 }
 
 impl<T: 'static> Parser<T> {
