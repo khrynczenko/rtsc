@@ -1,304 +1,228 @@
-use std::rc::Rc;
-
 use regex::Regex;
 
-use super::Source;
-
-pub type Parsed<T> = (T, Source);
-
-type RcParsingFunction<T> = Rc<dyn Fn(Source) -> Option<Parsed<T>>>;
-
-pub trait TParser<T> {
-    fn parse(&self, source: Source) -> Option<Parsed<T>>;
+#[derive(Debug, PartialEq)]
+pub enum OrValue<LHS, RHS> {
+    Lhs(LHS),
+    Rhs(RHS),
 }
 
-#[derive(Clone)]
-pub struct Parser<T> {
-    function: RcParsingFunction<T>,
+type ParseResult<'input, OutputT> = Result<(&'input str, OutputT), &'input str>;
+
+pub trait Parser<'input, OutputT> {
+    fn parse(&self, input: &'input str) -> ParseResult<'input, OutputT>;
 }
 
-impl<T: std::fmt::Debug> std::fmt::Debug for Parser<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("Parser<T> { function: Source -> T }")
+impl<'input, F, OutputT> Parser<'input, OutputT> for F
+where
+    F: Fn(&'input str) -> ParseResult<'input, OutputT>,
+{
+    fn parse(&self, input: &'input str) -> ParseResult<'input, OutputT> {
+        self(input)
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum OrValue<T, U> {
-    Lhs(T),
-    Rhs(U),
+pub fn match_regex<'input>(input: &'input str, regex: &Regex) -> ParseResult<'input, String> {
+    // We should always try to match on the beginning of the source string
+    assert!(regex.as_str().chars().take(1).next().unwrap() == '^');
+
+    match regex.find(input) {
+        Some(matched) => Ok((
+            &input[matched.as_str().len()..],
+            matched.as_str().to_owned(),
+        )),
+        _ => Err(input),
+    }
 }
 
-impl<T, U> PartialEq for OrValue<T, U>
+pub fn regex<'a>(regex: Regex) -> impl Parser<'a, String> {
+    move |input: &'a str| match_regex(input, &regex)
+}
+
+pub fn constant<'a, T>(value: T) -> impl Parser<'a, T>
 where
-    T: PartialEq,
-    U: PartialEq,
+    T: Clone,
 {
-    fn eq(&self, rhs: &OrValue<T, U>) -> bool {
-        match (self, rhs) {
-            (OrValue::Lhs(x), OrValue::Lhs(y)) => x == y,
-            (OrValue::Rhs(x), OrValue::Rhs(y)) => x == y,
-            (_, _) => false,
+    move |input: &'a str| Ok((input, value.clone()))
+}
+
+pub fn error<'a>(message: &'a str) -> impl Parser<'a, &'a str> {
+    move |_input: &'a str| Err(message)
+}
+
+pub fn maybe<'a, T>(parser: impl Parser<'a, T>) -> impl Parser<'a, Option<T>> {
+    move |input| match parser.parse(input) {
+        Ok((next_input, value)) => Ok((next_input, Some(value))),
+        Err(_err) => Ok((input, None)),
+    }
+}
+
+pub fn or<'a, P1, P2, R1, R2>(parser1: P1, parser2: P2) -> impl Parser<'a, OrValue<R1, R2>>
+where
+    P1: Parser<'a, R1>,
+    P2: Parser<'a, R2>,
+{
+    move |input: &'a str| {
+        if let Ok((next_input, result1)) = parser1.parse(input) {
+            return Ok((next_input, OrValue::Lhs(result1)));
+        }
+
+        if let Ok((next_input, result2)) = parser2.parse(input) {
+            return Ok((next_input, OrValue::Rhs(result2)));
+        }
+
+        Err(input)
+    }
+}
+
+pub fn and<'a, P1, P2, R1, R2>(parser1: P1, parser2: P2) -> impl Parser<'a, R2>
+where
+    P1: Parser<'a, R1>,
+    P2: Parser<'a, R2>,
+{
+    move |input: &'a str| {
+        if let Ok((next_input, _)) = parser1.parse(input) {
+            if let Ok((next_input, result2)) = parser2.parse(next_input) {
+                Ok((next_input, result2))
+            } else {
+                Err(input)
+            }
+        } else {
+            Err(input)
         }
     }
 }
 
-impl<T: 'static> Parser<T> {
-    /// Creates a parser from a parsing function.
-    pub fn new(function: RcParsingFunction<T>) -> Parser<T> {
-        Parser { function }
-    }
-
-    /// Create a parser that produces a constant value without
-    /// advancing the source.
-    pub fn constant<U: Clone + 'static>(value: U) -> Parser<U> {
-        Parser::new(Rc::new(move |source| Some((value.clone(), source))))
-    }
-
-    /// Creates a parser from a given regular expression.
-    pub fn regex(regex: Regex) -> Parser<String> {
-        Parser::new(Rc::new(move |source| source.match_regex(&regex)))
-    }
-
-    /// Given a parser creates a parser that can match zero or more times
-    /// using the aformentioned given parser.
-    pub fn zero_or_more(parser: Parser<T>) -> Parser<Vec<T>> {
-        Parser::new(Rc::new(move |source| {
-            let mut results = Vec::new();
-            let mut new_source = source;
-            loop {
-                let result = parser.parse(new_source.clone());
-                if result.is_none() {
-                    return Some((results, new_source));
-                }
-                let (v, s) = result.unwrap();
-                results.push(v);
-                new_source = s;
-            }
-        }))
-    }
-
-    /// Creates a parser that panics when used.
-    pub fn panic() -> Parser<()> {
-        panic!();
-    }
-
-    /// Creates a parser from two different parsers and tries to match on
-    /// the first one. If first one does not match tries the second one.
-    pub fn or<U: 'static>(self, rhs: Parser<U>) -> Parser<OrValue<T, U>> {
-        Parser::new(Rc::new(move |source| {
-            let parsed = self.parse(source.clone());
-            match parsed {
-                Some((value, source)) => Some((OrValue::Lhs(value), source)),
-                _ => {
-                    let (value, source) = rhs.parse(source)?;
-                    Some((OrValue::Rhs(value), source))
-                }
-            }
-        }))
-    }
-
-    /// Creates a parser from two different parsers and tries to match on
-    /// the first one and then the scond one. Both must match in that order.
-    pub fn and<U: Clone + 'static>(self, rhs: Parser<U>) -> Parser<U> {
-        self.bind(Rc::new(move |_| rhs.clone()))
-    }
-
-    /// Replaces the value produced by a parser.
-    pub fn map<U: Clone + 'static>(self, callback: Rc<dyn Fn(T) -> U>) -> Parser<U> {
-        Parser::new(Rc::new(move |source| {
-            self.parse(source).map(|(v, s)| (callback(v), s))
-        }))
-    }
-
-    /// Binds value to a parser.
-    pub fn bind<U: 'static>(self, callback: Rc<dyn Fn(T) -> Parser<U>>) -> Parser<U> {
-        Parser::new(Rc::new(move |source| {
-            let (value, new_source) = self.parse(source)?;
-            callback(value).parse(new_source)
-        }))
-    }
-
-    pub fn maybe<U: 'static>(self, rhs: Parser<U>) -> Parser<Option<U>> {
-        Parser::new(Rc::new(move |source| {
-            rhs.parse(source.clone())
-                .map_or(Some((None, source)), |(x, new_source)| {
-                    Some((Some(x), new_source))
-                })
-        }))
-    }
-
-    pub fn parse_string_to_completion(self, string: String) -> Option<T> {
-        let source = Source { remaining: string };
-        let result = self.parse(source);
-        result.map(|(x, _)| x)
+pub fn zero_or_more<'a, T>(parser: impl Parser<'a, T>) -> impl Parser<'a, Vec<T>> {
+    move |input| {
+        let mut items = Vec::new();
+        let mut input = input;
+        while let Ok((next_input, item)) = parser.parse(input) {
+            items.push(item);
+            input = next_input;
+        }
+        Ok((input, items))
     }
 }
 
-impl<T> TParser<T> for Parser<T> {
-    fn parse(&self, source: Source) -> Option<Parsed<T>> {
-        (self.function)(source)
+pub fn bind<'a, F, A, B, NextParser>(parser: impl Parser<'a, A>, f: F) -> impl Parser<'a, B>
+where
+    NextParser: Parser<'a, B>,
+    F: Fn(A) -> NextParser,
+{
+    move |input| match parser.parse(input) {
+        Ok((next_input, result)) => f(result).parse(next_input),
+        Err(err) => Err(err),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
+    use super::*;
 
-    use regex::Regex;
-
-    use super::{OrValue, Parsed, Parser, Source, TParser};
-    use crate::ast::Node;
-
-    fn parse_identifier(source: Source) -> Option<Parsed<Node>> {
-        let (name, source) = source.match_regex(&Regex::new(r"^[a-zA-Z][a-zA-Z\d]*").unwrap())?;
-        Some((Node::Identifier(name), source))
+    #[test]
+    fn matching_regex() {
+        let regex = Regex::new("^123").unwrap();
+        let input = "12345";
+        assert_eq!(match_regex(input, &regex), Ok(("45", String::from("123"))));
     }
 
     #[test]
-    fn parser_from_function_suceeds() {
-        let source = Source {
-            remaining: String::from("abc123"),
-        };
-        let parser = Parser::new(Rc::new(parse_identifier));
-        let (node, new_source) = parser.parse(source).unwrap();
-
-        assert_eq!(node, Node::Identifier(String::from("abc123")));
-        assert_eq!(new_source.remaining, "");
+    fn constant_parser() {
+        let input = "12345";
+        assert_eq!(constant("123").parse(input), Ok(("12345", "123")));
     }
 
     #[test]
-    fn parser_from_function_fails() {
-        let source = Source {
-            remaining: String::from("123"),
-        };
-        let parser = Parser::new(Rc::new(parse_identifier));
-
-        assert!(parser.parse(source).is_none());
+    fn error_parser() {
+        let message = "error";
+        let input = "12345";
+        assert_eq!(error(message).parse(input), Err(message));
     }
 
     #[test]
-    fn parser_from_regex_succeeds() {
-        let source = Source {
-            remaining: String::from("abc123"),
-        };
-        let parser = Parser::<String>::regex(Regex::new("^abc").unwrap());
-        let (node, new_source) = parser.parse(source).unwrap();
+    fn or_parser() {
+        let error = error("");
+        let constant1 = constant("123");
+        let input = "12345";
+        assert_eq!(
+            or(error, constant1).parse(input),
+            Ok(("12345", OrValue::Rhs("123")))
+        );
 
-        assert_eq!(node, String::from("abc"));
-        assert_eq!(new_source.remaining, "123");
+        let constant2 = constant("1");
+        let constant3 = constant("2");
+        assert_eq!(
+            or(constant2, constant3).parse(input),
+            Ok(("12345", OrValue::Lhs("1")))
+        );
     }
 
     #[test]
-    fn parser_from_regex_fails() {
-        let source = Source {
-            remaining: String::from("abc123"),
-        };
-        let parser = Parser::<String>::regex(Regex::new("^123").unwrap());
-        let result = parser.parse(source);
+    fn and_parser() {
+        let input = "12345";
+        let regex1 = Regex::new("^12").unwrap();
+        let regex2 = Regex::new("^3").unwrap();
+        let p1 = regex(regex1);
+        let p2 = regex(regex2);
+        assert_eq!(and(p1, p2).parse(input), Ok(("45", String::from("3"))));
 
-        assert!(result.is_none());
+        let input = "12345";
+        let regex3 = Regex::new("^12").unwrap();
+        let regex4 = Regex::new("^4").unwrap();
+        let p3 = regex(regex3);
+        let p4 = regex(regex4);
+        assert_eq!(and(p3, p4).parse(input), Err("12345"));
     }
 
     #[test]
-    fn parser_from_constant_succeeds() {
-        let source = Source {
-            remaining: String::from("abc123"),
-        };
-        let parser = Parser::<u32>::constant(1);
-        let (value, new_source) = parser.parse(source).unwrap();
+    fn zero_or_more_parser() {
+        let input = "1111END";
+        let pattern = Regex::new("^1").unwrap();
+        let one = regex(pattern);
+        let parser = zero_or_more(one);
 
-        assert_eq!(value, 1);
-        assert_eq!(new_source.remaining, "abc123");
+        assert_eq!(
+            parser.parse(input),
+            Ok((
+                "END",
+                vec!["1", "1", "1", "1"]
+                    .into_iter()
+                    .map(|s| String::from(s))
+                    .collect()
+            ))
+        );
     }
 
     #[test]
-    #[should_panic]
-    fn parser_from_panic_panics() {
-        Parser::<()>::panic();
+    fn bind_parser() {
+        let input = "1111END";
+        let pattern_ones = Regex::new("^1111").unwrap();
+        let ones = regex(pattern_ones);
+        let pattern_end = Regex::new("^END").unwrap();
+        let end = regex(pattern_end);
+
+        let parser = bind(ones, |_ones| |input| end.parse(input));
+        let result = parser.parse(input);
+
+        assert_eq!(result, Ok(("", String::from("END"))));
     }
 
     #[test]
-    fn parser_or_parser_succeeds() {
-        let source = Source {
-            remaining: String::from("abc123"),
-        };
-        let parser1 = Parser::<String>::regex(Regex::new("^1").unwrap());
-        let parser2 = Parser::<u32>::constant(2);
-        let or = parser1.or(parser2);
-        let (value, new_source) = or.parse(source).unwrap();
-        match value {
-            OrValue::Lhs(_) => assert!(false),
-            OrValue::Rhs(v) => assert_eq!(v, 2),
-        }
-        assert_eq!(new_source.remaining, "abc123");
-    }
+    fn maybe_parser() {
+        let input = "1111END";
+        let pattern_ones = Regex::new("^1112").unwrap();
+        let ones = regex(pattern_ones);
 
-    #[test]
-    fn parser_and_succeeds() {
-        let source = Source {
-            remaining: String::from("abc123"),
-        };
-        let parser1 = Parser::<String>::regex(Regex::new("^abc").unwrap());
-        let parser2 = Parser::<String>::regex(Regex::new("^123").unwrap());
-        let and = parser1.and(parser2);
-        let (value, new_source) = and.parse(source).unwrap();
+        let parser = maybe(ones);
+        let result = parser.parse(input);
 
-        assert_eq!(value, "123");
-        assert_eq!(new_source.remaining, "");
-    }
+        assert_eq!(result, Ok(("1111END", None)));
 
-    #[test]
-    fn parser_and_fails() {
-        let source = Source {
-            remaining: String::from("abc123"),
-        };
-        let parser1 = Parser::<String>::regex(Regex::new("^1").unwrap());
-        let parser2 = Parser::<u32>::constant(2);
-        let and = parser1.and(parser2);
+        let pattern_ones = Regex::new("^1111").unwrap();
+        let ones_correct = regex(pattern_ones);
+        let parser = maybe(ones_correct);
+        let result = parser.parse(input);
 
-        assert!(and.parse(source).is_none());
-    }
-
-    #[test]
-    fn parser_zero_or_more_suceeds() {
-        let source = Source {
-            remaining: String::from("111abc123"),
-        };
-        let parser = Parser::<String>::regex(Regex::new("^1").unwrap());
-        let zero_or_more = Parser::zero_or_more(parser);
-        let (values, new_source) = zero_or_more.parse(source).unwrap();
-        assert_eq!(values, vec!["1", "1", "1"]);
-        assert_eq!(new_source.remaining, "abc123");
-    }
-
-    #[test]
-    fn parser_map_succeeds() {
-        let source = Source {
-            remaining: String::from("abc123"),
-        };
-        let parser = Parser::<String>::regex(Regex::new("^[a-z]*").unwrap());
-        let uppercase_parser =
-            parser.map(Rc::new(|letters: String| letters.as_str().to_uppercase()));
-        let (values, new_source) = uppercase_parser.parse(source).unwrap();
-        assert_eq!(values, "ABC");
-        assert_eq!(new_source.remaining, "123");
-    }
-
-    #[test]
-    fn parser_binding_suceeds() {
-        let source = Source {
-            remaining: String::from("111abc123"),
-        };
-        let parser = Parser::<String>::regex(Regex::new("^1").unwrap());
-        let zero_or_more = Parser::zero_or_more(parser);
-        let ones_parser = zero_or_more.bind(Rc::new(|values: Vec<String>| {
-            let concatenated: String = values.iter().fold(String::new(), |acc, item| acc + item);
-            Parser::<i32>::constant(concatenated.parse::<i32>().unwrap())
-        }));
-        let (value, new_source) = ones_parser.parse(source).unwrap();
-
-        assert_eq!(value, 111);
-        assert_eq!(new_source.remaining, "abc123");
+        assert_eq!(result, Ok(("END", Some(String::from("1111")))));
     }
 }
