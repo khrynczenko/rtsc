@@ -104,6 +104,16 @@ pub fn zero_or_more<'a, T>(parser: impl Parser<'a, T>) -> impl Parser<'a, Vec<T>
     }
 }
 
+pub fn map<'a, F, A, B>(parser: impl Parser<'a, A>, f: F) -> impl Parser<'a, B>
+where
+    F: Fn(A) -> B,
+{
+    move |input| match parser.parse(input) {
+        Ok((next_input, result)) => Ok((next_input, f(result))),
+        Err(err) => Err(err),
+    }
+}
+
 pub fn bind<'a, F, A, B, NextParser>(parser: impl Parser<'a, A>, f: F) -> impl Parser<'a, B>
 where
     NextParser: Parser<'a, B>,
