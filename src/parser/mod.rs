@@ -71,10 +71,7 @@ pub fn make_number_parser<'a>() -> impl Parser<'a, Node> {
 }
 
 pub fn make_identifier_parser<'a>() -> impl Parser<'a, Node> {
-    cmb::map(
-        make_token_parser(Regex::new("^[a-zA-Z_][a-zA-Z0-9_]*").unwrap()),
-        |text: String| Node::Identifier(text),
-    )
+    cmb::map(make_id_string_parser(), Node::Identifier)
 }
 
 pub fn make_args_parser<'a>() -> impl Parser<'a, Vec<Node>> {
@@ -145,7 +142,7 @@ pub fn make_atom_parser<'a>() -> impl Parser<'a, Node> {
 pub fn make_unary_parser<'a>() -> impl Parser<'a, Node> {
     cmb::bind(cmb::maybe(make_not_parser()), move |not| {
         cmb::map(make_atom_parser(), move |term| {
-            if let Some(_) = not {
+            if not.is_some() {
                 Node::Not(Box::new(term))
             } else {
                 term
