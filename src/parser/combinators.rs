@@ -1,12 +1,12 @@
 use regex::Regex;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum OrValue<LHS, RHS> {
     Lhs(LHS),
     Rhs(RHS),
 }
 
-type ParseResult<'input, OutputT> = Result<(&'input str, OutputT), &'input str>;
+pub type ParseResult<'input, OutputT> = Result<(&'input str, OutputT), &'input str>;
 
 pub trait Parser<'input, OutputT> {
     fn parse(&self, input: &'input str) -> ParseResult<'input, OutputT>;
