@@ -14,6 +14,7 @@ pub type Whitespace = String;
 
 macro_rules! token_parser {
     ($name:ident, $pattern:expr) => {
+        #[allow(clippy::trivial_regex)]
         pub fn $name<'a>() -> impl Parser<'a, String> {
             make_token_parser(Regex::new($pattern).unwrap())
         }
