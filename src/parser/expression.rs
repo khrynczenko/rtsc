@@ -28,12 +28,14 @@ token_parser! {make_function_parser, "^function"}
 token_parser! {make_if_parser, "^if"}
 token_parser! {make_else_parser, "^else"}
 token_parser! {make_return_parser, "^return"}
+token_parser! {make_while_parser, "^while"}
 token_parser! {make_var_parser, "^var"}
+token_parser! {make_assign_parser, "^="}
 token_parser! {make_comma_parser, "^,"}
 token_parser! {make_semicolon_parser, "^;"}
 token_parser! {make_left_paren_parser, r"^\("}
 token_parser! {make_right_paren_parser, r"^\)"}
-token_parser! {make_left_brace_parser, r"^\}"}
+token_parser! {make_left_brace_parser, r"^\{"}
 token_parser! {make_right_brace_parser, r"^\}"}
 token_parser! {make_not_parser, r"^!"}
 token_parser! {make_equal_parser, r"^=="}
@@ -110,7 +112,7 @@ pub fn make_atom_parser<'a>() -> impl Parser<'a, Node> {
         cmb::or(
             make_call_parser(),
             cmb::or(
-                make_id_string_parser(),
+                make_identifier_parser(),
                 cmb::or(
                     make_number_parser(),
                     cmb::and(
@@ -125,7 +127,7 @@ pub fn make_atom_parser<'a>() -> impl Parser<'a, Node> {
         |e| match e {
             OrValue::Lhs(call) => cmb::constant(call),
             OrValue::Rhs(id_or_number_or_expr) => match id_or_number_or_expr {
-                OrValue::Lhs(id) => cmb::constant(Node::Identifier(id)),
+                OrValue::Lhs(id) => cmb::constant(id),
                 OrValue::Rhs(number_or_expr) => match number_or_expr {
                     OrValue::Lhs(number) => cmb::constant(number),
                     OrValue::Rhs(expr) => cmb::constant(expr),

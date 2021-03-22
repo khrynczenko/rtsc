@@ -6,6 +6,15 @@ pub enum OrValue<LHS, RHS> {
     Rhs(RHS),
 }
 
+impl<T> OrValue<T, T> {
+    pub fn extract(&self) -> &T {
+        match self {
+            OrValue::Lhs(x) => x,
+            OrValue::Rhs(x) => x,
+        }
+    }
+}
+
 pub type ParseResult<'input, OutputT> = Result<(&'input str, OutputT), &'input str>;
 
 pub trait Parser<'input, OutputT> {
