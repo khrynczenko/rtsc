@@ -3,7 +3,7 @@ use regex::Regex;
 use crate::parser::combinators as cmb;
 use crate::parser::combinators::{OrValue, Parser};
 
-use crate::ast::Node;
+use crate::ast::Ast;
 
 pub type Comment = String;
 pub type Whitespace = String;
@@ -46,7 +46,7 @@ token_parser! {make_star_parser, r"^\*"}
 token_parser! {make_slash_parser, r"^/"}
 token_parser! {make_id_string_parser, r"^[a-zA-Z_][a-zA-Z0-9_]*"}
 
-pub fn make_expression_parser<'a>() -> impl Parser<'a, Node> {
+pub fn make_expression_parser<'a>() -> impl Parser<'a, Ast> {
     |input| make_comparison_parser().parse(input)
 }
 
@@ -58,21 +58,21 @@ pub fn make_ignored_parser<'a>() -> impl Parser<'a, Vec<OrValue<Whitespace, Comm
     cmb::zero_or_more(cmb::or(whitespace_parser, comment_parser))
 }
 
-pub fn make_number_parser<'a>() -> impl Parser<'a, Node> {
+pub fn make_number_parser<'a>() -> impl Parser<'a, Ast> {
     cmb::map(
         make_token_parser(Regex::new("^[0-9]+").unwrap()),
         |text: String| match text.parse::<i32>() {
-            Ok(value) => Node::Number(value),
+            Ok(value) => Ast::Number(value),
             Err(_) => unreachable!(),
         },
     )
 }
 
-pub fn make_identifier_parser<'a>() -> impl Parser<'a, Node> {
-    cmb::map(make_id_string_parser(), Node::Identifier)
+pub fn make_identifier_parser<'a>() -> impl Parser<'a, Ast> {
+    cmb::map(make_id_string_parser(), Ast::Identifier)
 }
 
-pub fn make_args_parser<'a>() -> impl Parser<'a, Vec<Node>> {
+pub fn make_args_parser<'a>() -> impl Parser<'a, Vec<Ast>> {
     cmb::bind(cmb::maybe(make_expression_parser()), |arg| {
         cmb::bind(
             cmb::zero_or_more(cmb::and(make_comma_parser(), make_expression_parser())),
@@ -92,14 +92,14 @@ pub fn make_args_parser<'a>() -> impl Parser<'a, Vec<Node>> {
     })
 }
 
-pub fn make_call_parser<'a>() -> impl Parser<'a, Node> {
+pub fn make_call_parser<'a>() -> impl Parser<'a, Ast> {
     cmb::bind(make_id_string_parser(), move |name| {
         cmb::bind(
             cmb::and(make_left_paren_parser(), make_args_parser()),
             move |args| {
                 cmb::and(
                     make_right_paren_parser(),
-                    cmb::constant(Node::Call(name.clone(), args)),
+                    cmb::constant(Ast::Call(name.clone(), args)),
                 )
             },
         )
@@ -107,7 +107,7 @@ pub fn make_call_parser<'a>() -> impl Parser<'a, Node> {
 }
 
 // atom <- call | ID | NUMBER | LEFT_PAREN expression RIGHT_PAREN
-pub fn make_atom_parser<'a>() -> impl Parser<'a, Node> {
+pub fn make_atom_parser<'a>() -> impl Parser<'a, Ast> {
     cmb::bind(
         cmb::or(
             make_call_parser(),
@@ -137,11 +137,11 @@ pub fn make_atom_parser<'a>() -> impl Parser<'a, Node> {
     )
 }
 // unary <- NOT? atom
-pub fn make_unary_parser<'a>() -> impl Parser<'a, Node> {
+pub fn make_unary_parser<'a>() -> impl Parser<'a, Ast> {
     cmb::bind(cmb::maybe(make_not_parser()), move |not| {
         cmb::map(make_atom_parser(), move |term| {
             if not.is_some() {
-                Node::Not(Box::new(term))
+                Ast::Not(Box::new(term))
             } else {
                 term
             }
@@ -150,7 +150,7 @@ pub fn make_unary_parser<'a>() -> impl Parser<'a, Node> {
 }
 
 // product <- unary ((STAR / SLASH) unary)*
-pub fn make_product_parser<'a>() -> impl Parser<'a, Node> {
+pub fn make_product_parser<'a>() -> impl Parser<'a, Ast> {
     cmb::bind(make_unary_parser(), move |first| {
         cmb::map(
             cmb::zero_or_more(cmb::bind(
@@ -161,12 +161,12 @@ pub fn make_product_parser<'a>() -> impl Parser<'a, Node> {
                     })
                 },
             )),
-            move |operator_terms: Vec<(OrValue<String, String>, Node)>| {
+            move |operator_terms: Vec<(OrValue<String, String>, Ast)>| {
                 operator_terms
                     .into_iter()
                     .fold(first.clone(), move |acc, (operator, term)| match operator {
-                        OrValue::Lhs(_star) => Node::Multiplication(Box::new(acc), Box::new(term)),
-                        OrValue::Rhs(_slash) => Node::Division(Box::new(acc), Box::new(term)),
+                        OrValue::Lhs(_star) => Ast::Multiplication(Box::new(acc), Box::new(term)),
+                        OrValue::Rhs(_slash) => Ast::Division(Box::new(acc), Box::new(term)),
                     })
             },
         )
@@ -174,7 +174,7 @@ pub fn make_product_parser<'a>() -> impl Parser<'a, Node> {
 }
 
 // sum <- product ((PLUS / MINUS) product)*
-pub fn make_sum_parser<'a>() -> impl Parser<'a, Node> {
+pub fn make_sum_parser<'a>() -> impl Parser<'a, Ast> {
     cmb::bind(make_product_parser(), move |first| {
         cmb::map(
             cmb::zero_or_more(cmb::bind(
@@ -185,12 +185,12 @@ pub fn make_sum_parser<'a>() -> impl Parser<'a, Node> {
                     })
                 },
             )),
-            move |operator_terms: Vec<(OrValue<String, String>, Node)>| {
+            move |operator_terms: Vec<(OrValue<String, String>, Ast)>| {
                 operator_terms
                     .into_iter()
                     .fold(first.clone(), move |acc, (operator, term)| match operator {
-                        OrValue::Lhs(_plus) => Node::Addition(Box::new(acc), Box::new(term)),
-                        OrValue::Rhs(_minus) => Node::Subtraction(Box::new(acc), Box::new(term)),
+                        OrValue::Lhs(_plus) => Ast::Addition(Box::new(acc), Box::new(term)),
+                        OrValue::Rhs(_minus) => Ast::Subtraction(Box::new(acc), Box::new(term)),
                     })
             },
         )
@@ -198,7 +198,7 @@ pub fn make_sum_parser<'a>() -> impl Parser<'a, Node> {
 }
 
 // comparison <- sum ((EQUAL / NOT_EQUAL) sum)*
-pub fn make_comparison_parser<'a>() -> impl Parser<'a, Node> {
+pub fn make_comparison_parser<'a>() -> impl Parser<'a, Ast> {
     cmb::bind(make_sum_parser(), move |first| {
         cmb::map(
             cmb::zero_or_more(cmb::bind(
@@ -209,12 +209,12 @@ pub fn make_comparison_parser<'a>() -> impl Parser<'a, Node> {
                     })
                 },
             )),
-            move |operator_terms: Vec<(OrValue<String, String>, Node)>| {
+            move |operator_terms: Vec<(OrValue<String, String>, Ast)>| {
                 operator_terms
                     .into_iter()
                     .fold(first.clone(), move |acc, (operator, term)| match operator {
-                        OrValue::Lhs(_equal) => Node::Equal(Box::new(acc), Box::new(term)),
-                        OrValue::Rhs(_not_equal) => Node::NotEqual(Box::new(acc), Box::new(term)),
+                        OrValue::Lhs(_equal) => Ast::Equal(Box::new(acc), Box::new(term)),
+                        OrValue::Rhs(_not_equal) => Ast::NotEqual(Box::new(acc), Box::new(term)),
                     })
             },
         )
@@ -253,7 +253,7 @@ mod tests {
         let next_input = parser.parse(input).unwrap().0;
         let parsed = parser.parse(input).unwrap().1;
         assert_eq!(next_input, "");
-        assert_eq!(parsed, Node::Number(123));
+        assert_eq!(parsed, Ast::Number(123));
     }
 
     #[test]
@@ -265,9 +265,9 @@ mod tests {
         assert_eq!(
             parsed,
             vec![
-                Node::Identifier(String::from("arg1")),
-                Node::Identifier(String::from("arg2")),
-                Node::Identifier(String::from("arg3"))
+                Ast::Identifier(String::from("arg1")),
+                Ast::Identifier(String::from("arg2")),
+                Ast::Identifier(String::from("arg3"))
             ]
         );
     }
@@ -278,7 +278,7 @@ mod tests {
         let parser = make_call_parser();
         let (next_input, parsed) = parser.parse(input).unwrap();
         let (name, args) = match parsed {
-            Node::Call(name, args) => (name, args),
+            Ast::Call(name, args) => (name, args),
             _ => panic!(),
         };
         assert_eq!(next_input, "");
@@ -286,9 +286,9 @@ mod tests {
         assert_eq!(
             args,
             vec![
-                Node::Identifier(String::from("arg1")),
-                Node::Identifier(String::from("arg2")),
-                Node::Identifier(String::from("arg3"))
+                Ast::Identifier(String::from("arg1")),
+                Ast::Identifier(String::from("arg2")),
+                Ast::Identifier(String::from("arg3"))
             ]
         );
     }
@@ -299,7 +299,7 @@ mod tests {
         let parser = make_call_parser();
         let (next_input, parsed) = parser.parse(input).unwrap();
         let (name, args) = match parsed {
-            Node::Call(name, args) => (name, args),
+            Ast::Call(name, args) => (name, args),
             _ => panic!(),
         };
         assert_eq!(next_input, "");
@@ -313,7 +313,7 @@ mod tests {
         let parser = make_atom_parser();
         let (next_input, parsed) = parser.parse(input).unwrap();
         let (name, args) = match parsed {
-            Node::Call(name, args) => (name, args),
+            Ast::Call(name, args) => (name, args),
             _ => panic!(),
         };
         assert_eq!(next_input, "");
@@ -327,7 +327,7 @@ mod tests {
         let parser = make_atom_parser();
         let (next_input, parsed) = parser.parse(input).unwrap();
         assert_eq!(next_input, "");
-        assert_eq!(parsed, Node::Identifier(String::from("identifier")));
+        assert_eq!(parsed, Ast::Identifier(String::from("identifier")));
     }
 
     #[test]
@@ -336,7 +336,7 @@ mod tests {
         let parser = make_atom_parser();
         let (next_input, parsed) = parser.parse(input).unwrap();
         assert_eq!(next_input, "");
-        assert_eq!(parsed, Node::Number(123));
+        assert_eq!(parsed, Ast::Number(123));
     }
 
     #[test]
@@ -347,7 +347,7 @@ mod tests {
         assert_eq!(next_input, "");
         assert_eq!(
             parsed,
-            Node::Not(Box::new(Node::Identifier(String::from("id"))))
+            Ast::Not(Box::new(Ast::Identifier(String::from("id"))))
         );
     }
 
@@ -359,12 +359,12 @@ mod tests {
         assert_eq!(next_input, "");
         assert_eq!(
             parsed,
-            Node::Division(
-                Box::new(Node::Multiplication(
-                    Box::new(Node::Number(1)),
-                    Box::new(Node::Number(2))
+            Ast::Division(
+                Box::new(Ast::Multiplication(
+                    Box::new(Ast::Number(1)),
+                    Box::new(Ast::Number(2))
                 )),
-                Box::new(Node::Number(3))
+                Box::new(Ast::Number(3))
             )
         );
     }
@@ -377,12 +377,12 @@ mod tests {
         assert_eq!(next_input, "");
         assert_eq!(
             parsed,
-            Node::Subtraction(
-                Box::new(Node::Addition(
-                    Box::new(Node::Number(1)),
-                    Box::new(Node::Number(2))
+            Ast::Subtraction(
+                Box::new(Ast::Addition(
+                    Box::new(Ast::Number(1)),
+                    Box::new(Ast::Number(2))
                 )),
-                Box::new(Node::Number(3))
+                Box::new(Ast::Number(3))
             )
         );
     }
@@ -395,12 +395,12 @@ mod tests {
         assert_eq!(next_input, "");
         assert_eq!(
             parsed,
-            Node::NotEqual(
-                Box::new(Node::Equal(
-                    Box::new(Node::Number(1)),
-                    Box::new(Node::Number(2))
+            Ast::NotEqual(
+                Box::new(Ast::Equal(
+                    Box::new(Ast::Number(1)),
+                    Box::new(Ast::Number(2))
                 )),
-                Box::new(Node::Number(3))
+                Box::new(Ast::Number(3))
             )
         );
     }
@@ -413,11 +413,11 @@ mod tests {
         assert_eq!(next_input, "");
         assert_eq!(
             parsed,
-            Node::Call(
+            Ast::Call(
                 String::from("f"),
-                vec![Node::Multiplication(
-                    Box::new(Node::Number(1)),
-                    Box::new(Node::Number(2))
+                vec![Ast::Multiplication(
+                    Box::new(Ast::Number(1)),
+                    Box::new(Ast::Number(2))
                 )],
             )
         );

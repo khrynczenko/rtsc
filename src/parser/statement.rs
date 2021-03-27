@@ -3,9 +3,9 @@ use crate::parser::combinators::OrValue;
 use crate::parser::combinators::Parser;
 use crate::parser::expression as exp;
 
-use crate::ast::Node;
+use crate::ast::Ast;
 
-pub fn make_statement_parser<'a>() -> impl Parser<'a, Node> {
+pub fn make_statement_parser<'a>() -> impl Parser<'a, Ast> {
     |input: &'a str| {
         cmb::map(
             cmb::or(
@@ -56,27 +56,27 @@ pub fn make_statement_parser<'a>() -> impl Parser<'a, Node> {
 }
 
 // return_statement <- RETURN expression SEMICOLOn
-pub fn make_return_parser<'a>() -> impl Parser<'a, Node> {
+pub fn make_return_parser<'a>() -> impl Parser<'a, Ast> {
     cmb::and(
         exp::make_return_parser(),
         cmb::bind(exp::make_expression_parser(), |expr| {
             cmb::and(
                 exp::make_semicolon_parser(),
-                cmb::constant(Node::Return(Box::new(expr))),
+                cmb::constant(Ast::Return(Box::new(expr))),
             )
         }),
     )
 }
 
 // expression_statement <- expression SEMICOLON
-pub fn make_expression_parser<'a>() -> impl Parser<'a, Node> {
+pub fn make_expression_parser<'a>() -> impl Parser<'a, Ast> {
     cmb::bind(exp::make_expression_parser(), |expr| {
         cmb::and(exp::make_semicolon_parser(), cmb::constant(expr))
     })
 }
 
 // if_statement <- IF LEFT_PAREN expression RIGHT_PAREN statement ELSE statement
-pub fn make_if_parser<'a>() -> impl Parser<'a, Node> {
+pub fn make_if_parser<'a>() -> impl Parser<'a, Ast> {
     cmb::and(
         exp::make_if_parser(),
         cmb::and(
@@ -89,7 +89,7 @@ pub fn make_if_parser<'a>() -> impl Parser<'a, Node> {
                         cmb::and(
                             exp::make_else_parser(),
                             cmb::bind(make_statement_parser(), move |alternative| {
-                                cmb::constant(Node::If(
+                                cmb::constant(Ast::If(
                                     Box::new(conditional.clone()),
                                     Box::new(consequence.clone()),
                                     Box::new(alternative),
@@ -104,14 +104,14 @@ pub fn make_if_parser<'a>() -> impl Parser<'a, Node> {
 }
 
 // while_statement <- WHILE LEFT_PAREN expression RIGHT_PAREN statement
-pub fn make_while_parser<'a>() -> impl Parser<'a, Node> {
+pub fn make_while_parser<'a>() -> impl Parser<'a, Ast> {
     cmb::and(
         cmb::and(exp::make_while_parser(), exp::make_left_paren_parser()),
         cmb::bind(exp::make_expression_parser(), move |conditional| {
             cmb::and(
                 exp::make_right_paren_parser(),
                 cmb::bind(make_statement_parser(), move |stmt| {
-                    cmb::constant(Node::While(Box::new(conditional.clone()), Box::new(stmt)))
+                    cmb::constant(Ast::While(Box::new(conditional.clone()), Box::new(stmt)))
                 }),
             )
         }),
@@ -119,7 +119,7 @@ pub fn make_while_parser<'a>() -> impl Parser<'a, Node> {
 }
 
 // var_statement <- VAR ID ASSIGN expression SEMICOLON
-pub fn make_var_parser<'a>() -> impl Parser<'a, Node> {
+pub fn make_var_parser<'a>() -> impl Parser<'a, Ast> {
     cmb::and(
         exp::make_var_parser(),
         cmb::bind(exp::make_id_string_parser(), move |identifier| {
@@ -128,7 +128,7 @@ pub fn make_var_parser<'a>() -> impl Parser<'a, Node> {
                 cmb::bind(exp::make_expression_parser(), move |expr| {
                     cmb::and(
                         exp::make_semicolon_parser(),
-                        cmb::constant(Node::Var(identifier.clone(), Box::new(expr))),
+                        cmb::constant(Ast::Var(identifier.clone(), Box::new(expr))),
                     )
                 }),
             )
@@ -137,14 +137,14 @@ pub fn make_var_parser<'a>() -> impl Parser<'a, Node> {
 }
 
 // assignment_statement <- ID ASSIGN expression SEMICOLON
-pub fn make_assignment_parser<'a>() -> impl Parser<'a, Node> {
+pub fn make_assignment_parser<'a>() -> impl Parser<'a, Ast> {
     cmb::bind(exp::make_id_string_parser(), move |identifier| {
         cmb::and(
             exp::make_assign_parser(),
             cmb::bind(exp::make_expression_parser(), move |expr| {
                 cmb::and(
                     exp::make_semicolon_parser(),
-                    cmb::constant(Node::Assignment(identifier.clone(), Box::new(expr))),
+                    cmb::constant(Ast::Assignment(identifier.clone(), Box::new(expr))),
                 )
             }),
         )
@@ -152,7 +152,7 @@ pub fn make_assignment_parser<'a>() -> impl Parser<'a, Node> {
 }
 
 // block_statement <- LEFT_BRACE statement* RIGHT_BRACE
-pub fn make_block_parser<'a>() -> impl Parser<'a, Node> {
+pub fn make_block_parser<'a>() -> impl Parser<'a, Ast> {
     cmb::and(
         exp::make_left_brace_parser(),
         cmb::bind(
@@ -160,7 +160,7 @@ pub fn make_block_parser<'a>() -> impl Parser<'a, Node> {
             move |statements| {
                 cmb::and(
                     exp::make_right_brace_parser(),
-                    cmb::constant(Node::Block(statements)),
+                    cmb::constant(Ast::Block(statements)),
                 )
             },
         ),
@@ -187,7 +187,7 @@ pub fn make_parameters_parser<'a>() -> impl Parser<'a, Vec<String>> {
 }
 
 // function_statement <- FUNCTION ID LEFT_PAREN paramters RIGHT_PAREN block_statement
-pub fn make_function_parser<'a>() -> impl Parser<'a, Node> {
+pub fn make_function_parser<'a>() -> impl Parser<'a, Ast> {
     cmb::and(
         exp::make_function_parser(),
         cmb::bind(exp::make_id_string_parser(), move |function_id| {
@@ -198,7 +198,7 @@ pub fn make_function_parser<'a>() -> impl Parser<'a, Node> {
                     cmb::and(
                         exp::make_right_paren_parser(),
                         cmb::bind(make_block_parser(), move |block| {
-                            cmb::constant(Node::Function(
+                            cmb::constant(Ast::Function(
                                 function_id.clone(),
                                 parameters.clone(),
                                 Box::new(block),
@@ -221,7 +221,7 @@ mod tests {
         let parser = make_return_parser();
         let (next_input, parsed) = parser.parse(input).unwrap();
         assert_eq!(next_input, "");
-        assert_eq!(parsed, Node::Return(Box::new(Node::Number(1))));
+        assert_eq!(parsed, Ast::Return(Box::new(Ast::Number(1))));
     }
 
     #[test]
@@ -230,7 +230,7 @@ mod tests {
         let parser = make_expression_parser();
         let (next_input, parsed) = parser.parse(input).unwrap();
         assert_eq!(next_input, "");
-        assert_eq!(parsed, Node::Number(1));
+        assert_eq!(parsed, Ast::Number(1));
     }
 
     #[test]
@@ -241,10 +241,10 @@ mod tests {
         assert_eq!(next_input, "");
         assert_eq!(
             parsed,
-            Node::If(
-                Box::new(Node::Number(1)),
-                Box::new(Node::Number(2)),
-                Box::new(Node::Number(3)),
+            Ast::If(
+                Box::new(Ast::Number(1)),
+                Box::new(Ast::Number(2)),
+                Box::new(Ast::Number(3)),
             )
         );
     }
@@ -257,7 +257,7 @@ mod tests {
         assert_eq!(next_input, "");
         assert_eq!(
             parsed,
-            Node::While(Box::new(Node::Number(1)), Box::new(Node::Number(2)),)
+            Ast::While(Box::new(Ast::Number(1)), Box::new(Ast::Number(2)),)
         );
     }
 
@@ -269,7 +269,7 @@ mod tests {
         assert_eq!(next_input, "");
         assert_eq!(
             parsed,
-            Node::Var(String::from("x"), Box::new(Node::Number(1)))
+            Ast::Var(String::from("x"), Box::new(Ast::Number(1)))
         );
     }
 
@@ -281,7 +281,7 @@ mod tests {
         assert_eq!(next_input, "");
         assert_eq!(
             parsed,
-            Node::Assignment(String::from("x"), Box::new(Node::Number(1)))
+            Ast::Assignment(String::from("x"), Box::new(Ast::Number(1)))
         );
     }
 
@@ -291,7 +291,7 @@ mod tests {
         let parser = make_block_parser();
         let (next_input, parsed) = parser.parse(input).unwrap();
         assert_eq!(next_input, "");
-        assert_eq!(parsed, Node::Block(vec![Node::Number(1), Node::Number(2),]));
+        assert_eq!(parsed, Ast::Block(vec![Ast::Number(1), Ast::Number(2),]));
     }
 
     #[test]
@@ -311,10 +311,10 @@ mod tests {
         assert_eq!(next_input, "");
         assert_eq!(
             parsed,
-            Node::Function(
+            Ast::Function(
                 String::from("f"),
                 vec![String::from("x"), String::from("y"), String::from("z"),],
-                Box::new(Node::Block(vec![Node::Number(1)]))
+                Box::new(Ast::Block(vec![Ast::Number(1)]))
             )
         );
     }

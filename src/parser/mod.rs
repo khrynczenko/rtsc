@@ -1,21 +1,21 @@
 pub mod combinators;
+
 mod expression;
 mod statement;
 
+use crate::ast::Ast;
 use crate::parser::combinators as cmb;
 use crate::parser::expression as exp;
 use crate::parser::statement as stmt;
 use combinators::Parser;
 
-use crate::ast::Node;
-
-pub fn make_full_parser<'a>() -> impl Parser<'a, Node> {
+pub fn make_full_parser<'a>() -> impl Parser<'a, Ast> {
     cmb::map(
         cmb::and(
             exp::make_ignored_parser(),
             cmb::zero_or_more(stmt::make_statement_parser()),
         ),
-        Node::Block,
+        Ast::Block,
     )
 }
 
@@ -39,34 +39,34 @@ mod tests {
         assert_eq!(next_input, "");
         assert_eq!(
             parsed,
-            Node::Block(vec![Node::Function(
+            Ast::Block(vec![Ast::Function(
                 String::from("factorial"),
                 vec![String::from("n")],
-                Box::new(Node::Block(vec![
-                    Node::Var(String::from("result"), Box::new(Node::Number(1))),
-                    Node::While(
-                        Box::new(Node::NotEqual(
-                            Box::new(Node::Identifier(String::from("n"))),
-                            Box::new(Node::Number(1))
+                Box::new(Ast::Block(vec![
+                    Ast::Var(String::from("result"), Box::new(Ast::Number(1))),
+                    Ast::While(
+                        Box::new(Ast::NotEqual(
+                            Box::new(Ast::Identifier(String::from("n"))),
+                            Box::new(Ast::Number(1))
                         )),
-                        Box::new(Node::Block(vec![
-                            Node::Assignment(
+                        Box::new(Ast::Block(vec![
+                            Ast::Assignment(
                                 String::from("result"),
-                                Box::new(Node::Multiplication(
-                                    Box::new(Node::Identifier(String::from("result"))),
-                                    Box::new(Node::Identifier(String::from("n"))),
+                                Box::new(Ast::Multiplication(
+                                    Box::new(Ast::Identifier(String::from("result"))),
+                                    Box::new(Ast::Identifier(String::from("n"))),
                                 ))
                             ),
-                            Node::Assignment(
+                            Ast::Assignment(
                                 String::from("n"),
-                                Box::new(Node::Subtraction(
-                                    Box::new(Node::Identifier(String::from("n"))),
-                                    Box::new(Node::Number(1)),
+                                Box::new(Ast::Subtraction(
+                                    Box::new(Ast::Identifier(String::from("n"))),
+                                    Box::new(Ast::Number(1)),
                                 ))
                             ),
                         ])),
                     ),
-                    Node::Return(Box::new(Node::Identifier(String::from("result"))))
+                    Ast::Return(Box::new(Ast::Identifier(String::from("result"))))
                 ]))
             )])
         );
