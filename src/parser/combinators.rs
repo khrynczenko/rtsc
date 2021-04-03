@@ -54,10 +54,6 @@ where
     move |input: &'a str| Ok((input, value.clone()))
 }
 
-pub fn error<'a>(message: &'a str) -> impl Parser<'a, &'a str> {
-    move |_input: &'a str| Err(message)
-}
-
 pub fn maybe<'a, T>(parser: impl Parser<'a, T>) -> impl Parser<'a, Option<T>> {
     move |input| match parser.parse(input) {
         Ok((next_input, value)) => Ok((next_input, Some(value))),
@@ -152,19 +148,12 @@ mod tests {
     }
 
     #[test]
-    fn error_parser() {
-        let message = "error";
-        let input = "12345";
-        assert_eq!(error(message).parse(input), Err(message));
-    }
-
-    #[test]
     fn or_parser() {
-        let error = error("");
-        let constant1 = constant("123");
+        let constant1 = regex(Regex::new("^x").unwrap());
+        let constant2 = constant("123");
         let input = "12345";
         assert_eq!(
-            or(error, constant1).parse(input),
+            or(constant1, constant2).parse(input),
             Ok(("12345", OrValue::Rhs("123")))
         );
 

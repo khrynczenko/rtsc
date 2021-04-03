@@ -11,16 +11,16 @@ pub fn make_statement_parser<'a>() -> impl Parser<'a, Ast> {
             cmb::or(
                 make_return_parser(),
                 cmb::or(
-                    make_function_parser(),
+                    make_if_parser(),
                     cmb::or(
-                        make_if_parser(),
+                        make_while_parser(),
                         cmb::or(
-                            make_while_parser(),
+                            make_var_parser(),
                             cmb::or(
-                                make_var_parser(),
+                                make_assignment_parser(),
                                 cmb::or(
-                                    make_assignment_parser(),
-                                    cmb::or(make_block_parser(), make_expression_parser()),
+                                    make_block_parser(),
+                                    cmb::or(make_function_parser(), make_expression_parser()),
                                 ),
                             ),
                         ),
@@ -29,17 +29,19 @@ pub fn make_statement_parser<'a>() -> impl Parser<'a, Ast> {
             ),
             |return_or_other| match return_or_other {
                 OrValue::Lhs(return_node) => return_node,
-                OrValue::Rhs(if_or_other) => match if_or_other {
+                OrValue::Rhs(if_or_while) => match if_or_while {
                     OrValue::Lhs(if_node) => if_node,
-                    OrValue::Rhs(function_or_other) => match function_or_other {
-                        OrValue::Lhs(function_node) => function_node,
-                        OrValue::Rhs(while_or_other) => match while_or_other {
-                            OrValue::Lhs(while_node) => while_node,
-                            OrValue::Rhs(var_or_other) => match var_or_other {
-                                OrValue::Lhs(var_node) => var_node,
-                                OrValue::Rhs(assignment_or_other) => match assignment_or_other {
-                                    OrValue::Lhs(assignment_node) => assignment_node,
-                                    OrValue::Rhs(block_or_expr) => block_or_expr.extract().clone(),
+                    OrValue::Rhs(while_or_var) => match while_or_var {
+                        OrValue::Lhs(while_node) => while_node,
+                        OrValue::Rhs(var_or_assignment) => match var_or_assignment {
+                            OrValue::Lhs(var_node) => var_node,
+                            OrValue::Rhs(asignment_or_block) => match asignment_or_block {
+                                OrValue::Lhs(assignment_node) => assignment_node,
+                                OrValue::Rhs(block_or_function) => match block_or_function {
+                                    OrValue::Lhs(block_node) => block_node,
+                                    OrValue::Rhs(function_or_expr) => {
+                                        function_or_expr.extract().clone()
+                                    }
                                 },
                             },
                         },
@@ -48,10 +50,6 @@ pub fn make_statement_parser<'a>() -> impl Parser<'a, Ast> {
             },
         )
         .parse(input)
-
-        //cmb::map(cmb::or(make_return_parser(), make_if_parser()),
-        //|x| x.extract().clone()
-        //).parse(input)
     }
 }
 
@@ -168,8 +166,8 @@ pub fn make_block_parser<'a>() -> impl Parser<'a, Ast> {
 }
 
 // parameters_statement <- (ID (COMMA ID)*)?
-pub fn make_parameters_parser<'a>() -> impl Parser<'a, Vec<String>> {
-    cmb::bind(exp::make_id_string_parser(), move |first_id| {
+pub fn make_parameters_parser<'a>() -> impl Parser<'a, Option<Vec<String>>> {
+    cmb::maybe(cmb::bind(exp::make_id_string_parser(), move |first_id| {
         cmb::bind(
             cmb::zero_or_more(cmb::and(
                 exp::make_comma_parser(),
@@ -183,7 +181,7 @@ pub fn make_parameters_parser<'a>() -> impl Parser<'a, Vec<String>> {
                 })
             },
         )
-    })
+    }))
 }
 
 // function_statement <- FUNCTION ID LEFT_PAREN paramters RIGHT_PAREN block_statement
@@ -198,11 +196,19 @@ pub fn make_function_parser<'a>() -> impl Parser<'a, Ast> {
                     cmb::and(
                         exp::make_right_paren_parser(),
                         cmb::bind(make_block_parser(), move |block| {
-                            cmb::constant(Ast::Function(
-                                function_id.clone(),
-                                parameters.clone(),
-                                Box::new(block),
-                            ))
+                            if let Some(ref params) = parameters {
+                                cmb::constant(Ast::Function(
+                                    function_id.clone(),
+                                    params.clone(),
+                                    Box::new(block),
+                                ))
+                            } else {
+                                cmb::constant(Ast::Function(
+                                    function_id.clone(),
+                                    vec![],
+                                    Box::new(block),
+                                ))
+                            }
                         }),
                     )
                 }),
@@ -251,13 +257,16 @@ mod tests {
 
     #[test]
     fn while_parser() {
-        let input = "while (1) 2; //xx";
+        let input = "while (1) { 2; } //xx";
         let parser = make_while_parser();
         let (next_input, parsed) = parser.parse(input).unwrap();
         assert_eq!(next_input, "");
         assert_eq!(
             parsed,
-            Ast::While(Box::new(Ast::Number(1)), Box::new(Ast::Number(2)),)
+            Ast::While(
+                Box::new(Ast::Number(1)),
+                Box::new(Ast::Block(vec![Ast::Number(2)]))
+            )
         );
     }
 
@@ -300,7 +309,7 @@ mod tests {
         let parser = make_parameters_parser();
         let (next_input, parsed) = parser.parse(input).unwrap();
         assert_eq!(next_input, "");
-        assert_eq!(parsed, vec!["x", "y", "z"]);
+        assert_eq!(parsed.unwrap(), vec!["x", "y", "z"]);
     }
 
     #[test]
@@ -314,6 +323,22 @@ mod tests {
             Ast::Function(
                 String::from("f"),
                 vec![String::from("x"), String::from("y"), String::from("z"),],
+                Box::new(Ast::Block(vec![Ast::Number(1)]))
+            )
+        );
+    }
+
+    #[test]
+    fn function_parser_without_args() {
+        let input = "function f() { 1; } //xx";
+        let parser = make_function_parser();
+        let (next_input, parsed) = parser.parse(input).unwrap();
+        assert_eq!(next_input, "");
+        assert_eq!(
+            parsed,
+            Ast::Function(
+                String::from("f"),
+                vec![],
                 Box::new(Ast::Block(vec![Ast::Number(1)]))
             )
         );

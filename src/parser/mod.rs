@@ -3,7 +3,7 @@ pub mod combinators;
 mod expression;
 mod statement;
 
-use crate::ast::Ast;
+use super::ast::Ast;
 use crate::parser::combinators as cmb;
 use crate::parser::expression as exp;
 use crate::parser::statement as stmt;
