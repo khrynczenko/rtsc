@@ -26,6 +26,7 @@ impl Environment {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Ast {
     Number(i32),
+    Bool(bool),
     Identifier(String),
     Not(Box<Ast>),
     Equal(Box<Ast>, Box<Ast>),
@@ -74,6 +75,14 @@ impl Ast {
             Ast::Number(value) => {
                 buffer.push('\n');
                 buffer.push_str(&format!("    ldr r0, ={}\n", value));
+            }
+            Ast::Bool(value) => {
+                buffer.push('\n');
+                if *value {
+                    buffer.push_str("    mov r0, #1\n");
+                } else {
+                    buffer.push_str("    mov r0, #0\n");
+                }
             }
             Ast::Not(expr) => {
                 buffer.push('\n');

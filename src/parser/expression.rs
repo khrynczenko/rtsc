@@ -26,6 +26,8 @@ pub fn make_token_parser<'a>(pattern: Regex) -> impl Parser<'a, String> {
 
 token_parser! {make_function_parser, "^function"}
 token_parser! {make_if_parser, "^if"}
+token_parser! {make_true_parser, "^true"}
+token_parser! {make_false_parser, "^false"}
 token_parser! {make_else_parser, "^else"}
 token_parser! {make_return_parser, "^return"}
 token_parser! {make_while_parser, "^while"}
@@ -68,6 +70,19 @@ pub fn make_number_parser<'a>() -> impl Parser<'a, Ast> {
     )
 }
 
+pub fn make_bool_parser<'a>() -> impl Parser<'a, Ast> {
+    cmb::map(
+        cmb::or(make_true_parser(), make_false_parser()),
+        |true_or_false| {
+            if let OrValue::Lhs(_) = true_or_false {
+                Ast::Bool(true)
+            } else {
+                Ast::Bool(false)
+            }
+        },
+    )
+}
+
 pub fn make_identifier_parser<'a>() -> impl Parser<'a, Ast> {
     cmb::map(make_id_string_parser(), Ast::Identifier)
 }
@@ -106,32 +121,39 @@ pub fn make_call_parser<'a>() -> impl Parser<'a, Ast> {
     })
 }
 
-// atom <- call | ID | NUMBER | LEFT_PAREN expression RIGHT_PAREN
+// scalar <- bool | ID, NUMBER
+pub fn make_scalar_parser<'a>() -> impl Parser<'a, Ast> {
+    let bool_or_id = cmb::or(make_bool_parser(), make_identifier_parser());
+    let bool_or_id_or_number = cmb::or(bool_or_id, make_number_parser());
+    cmb::map(bool_or_id_or_number, |any| match any {
+        OrValue::Lhs(boolean_or_id) => match boolean_or_id {
+            OrValue::Lhs(boolean) => boolean,
+            OrValue::Rhs(id) => id,
+        },
+        OrValue::Rhs(number) => number,
+    })
+}
+
+// atom <- call | scalar | LEFT_PAREN expression RIGHT_PAREN
 pub fn make_atom_parser<'a>() -> impl Parser<'a, Ast> {
     cmb::bind(
         cmb::or(
             make_call_parser(),
             cmb::or(
-                make_identifier_parser(),
-                cmb::or(
-                    make_number_parser(),
-                    cmb::and(
-                        make_left_paren_parser(),
-                        cmb::bind(make_expression_parser(), |e| {
-                            cmb::and(make_right_paren_parser(), cmb::constant(e))
-                        }),
-                    ),
+                make_scalar_parser(),
+                cmb::and(
+                    make_left_paren_parser(),
+                    cmb::bind(make_expression_parser(), |e| {
+                        cmb::and(make_right_paren_parser(), cmb::constant(e))
+                    }),
                 ),
             ),
         ),
         |e| match e {
             OrValue::Lhs(call) => cmb::constant(call),
-            OrValue::Rhs(id_or_number_or_expr) => match id_or_number_or_expr {
-                OrValue::Lhs(id) => cmb::constant(id),
-                OrValue::Rhs(number_or_expr) => match number_or_expr {
-                    OrValue::Lhs(number) => cmb::constant(number),
-                    OrValue::Rhs(expr) => cmb::constant(expr),
-                },
+            OrValue::Rhs(scalar_or_expr) => match scalar_or_expr {
+                OrValue::Lhs(scalar) => cmb::constant(scalar),
+                OrValue::Rhs(expr) => cmb::constant(expr),
             },
         },
     )
@@ -254,6 +276,21 @@ mod tests {
         let parsed = parser.parse(input).unwrap().1;
         assert_eq!(next_input, "");
         assert_eq!(parsed, Ast::Number(123));
+    }
+
+    #[test]
+    fn bool_parser() {
+        let true_input = "true  //xx";
+        let false_input = "false  //xx";
+        let parser = make_bool_parser();
+        let true_next_input = parser.parse(true_input).unwrap().0;
+        let true_parsed = parser.parse(true_input).unwrap().1;
+        let false_next_input = parser.parse(false_input).unwrap().0;
+        let false_parsed = parser.parse(false_input).unwrap().1;
+        assert_eq!(true_next_input, "");
+        assert_eq!(true_parsed, Ast::Bool(true));
+        assert_eq!(false_next_input, "");
+        assert_eq!(false_parsed, Ast::Bool(false));
     }
 
     #[test]
