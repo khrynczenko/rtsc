@@ -25,6 +25,7 @@ impl Environment {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Ast {
+    Undefined,
     Number(i32),
     Bool(bool),
     Identifier(String),
@@ -71,6 +72,10 @@ impl Ast {
                 for statement in statements {
                     statement.emit(buffer, env)
                 }
+            }
+            Ast::Undefined => {
+                buffer.push('\n');
+                buffer.push_str("    mov r0, #0\n");
             }
             Ast::Number(value) => {
                 buffer.push('\n');

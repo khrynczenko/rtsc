@@ -28,6 +28,7 @@ token_parser! {make_function_parser, "^function"}
 token_parser! {make_if_parser, "^if"}
 token_parser! {make_true_parser, "^true"}
 token_parser! {make_false_parser, "^false"}
+token_parser! {make_undefined_parser, "^undefined"}
 token_parser! {make_else_parser, "^else"}
 token_parser! {make_return_parser, "^return"}
 token_parser! {make_while_parser, "^while"}
@@ -83,6 +84,10 @@ pub fn make_bool_parser<'a>() -> impl Parser<'a, Ast> {
     )
 }
 
+pub fn make_undefined_parser_<'a>() -> impl Parser<'a, Ast> {
+    cmb::and(make_undefined_parser(), cmb::constant(Ast::Undefined))
+}
+
 pub fn make_identifier_parser<'a>() -> impl Parser<'a, Ast> {
     cmb::map(make_id_string_parser(), Ast::Identifier)
 }
@@ -121,13 +126,17 @@ pub fn make_call_parser<'a>() -> impl Parser<'a, Ast> {
     })
 }
 
-// scalar <- bool | ID, NUMBER
+// scalar <- undefined | bool | ID, NUMBER
 pub fn make_scalar_parser<'a>() -> impl Parser<'a, Ast> {
-    let bool_or_id = cmb::or(make_bool_parser(), make_identifier_parser());
-    let bool_or_id_or_number = cmb::or(bool_or_id, make_number_parser());
-    cmb::map(bool_or_id_or_number, |any| match any {
-        OrValue::Lhs(boolean_or_id) => match boolean_or_id {
-            OrValue::Lhs(boolean) => boolean,
+    let undefined_or_bool = cmb::or(make_undefined_parser_(), make_bool_parser());
+    let bool_or_id = cmb::or(undefined_or_bool, make_identifier_parser());
+    let undefined_or_bool_or_id_or_number = cmb::or(bool_or_id, make_number_parser());
+    cmb::map(undefined_or_bool_or_id_or_number, |any| match any {
+        OrValue::Lhs(bool_or_id) => match bool_or_id {
+            OrValue::Lhs(undefined_or_bool) => match undefined_or_bool {
+                OrValue::Lhs(undefined) => undefined,
+                OrValue::Rhs(b) => b,
+            },
             OrValue::Rhs(id) => id,
         },
         OrValue::Rhs(number) => number,
@@ -291,6 +300,16 @@ mod tests {
         assert_eq!(true_parsed, Ast::Bool(true));
         assert_eq!(false_next_input, "");
         assert_eq!(false_parsed, Ast::Bool(false));
+    }
+
+    #[test]
+    fn undefined_parser() {
+        let input = "undefined  //xx";
+        let parser = make_undefined_parser_();
+        let next_input = parser.parse(input).unwrap().0;
+        let parsed = parser.parse(input).unwrap().1;
+        assert_eq!(next_input, "");
+        assert_eq!(parsed, Ast::Undefined);
     }
 
     #[test]
