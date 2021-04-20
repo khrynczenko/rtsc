@@ -6,15 +6,6 @@ pub enum OrValue<LHS, RHS> {
     Rhs(RHS),
 }
 
-impl<T> OrValue<T, T> {
-    pub fn extract(&self) -> &T {
-        match self {
-            OrValue::Lhs(x) => x,
-            OrValue::Rhs(x) => x,
-        }
-    }
-}
-
 pub type ParseResult<'input, OutputT> = Result<(&'input str, OutputT), &'input str>;
 
 pub trait Parser<'input, OutputT> {
@@ -73,6 +64,27 @@ where
 
         if let Ok((next_input, result2)) = parser2.parse(input) {
             return Ok((next_input, OrValue::Rhs(result2)));
+        }
+
+        Err(input)
+    }
+}
+
+/// This function differs from regular `or` in that is homogenous
+/// for the parsers return types. It is simple to use because we don't need
+/// to pattern match on the result anymore.
+pub fn or_<'a, P1, P2, R>(parser1: P1, parser2: P2) -> impl Parser<'a, R>
+where
+    P1: Parser<'a, R>,
+    P2: Parser<'a, R>,
+{
+    move |input: &'a str| {
+        if let Ok((next_input, result1)) = parser1.parse(input) {
+            return Ok((next_input, result1));
+        }
+
+        if let Ok((next_input, result2)) = parser2.parse(input) {
+            return Ok((next_input, result2));
         }
 
         Err(input)
@@ -145,6 +157,21 @@ mod tests {
     fn constant_parser() {
         let input = "12345";
         assert_eq!(constant("123").parse(input), Ok(("12345", "123")));
+    }
+
+    #[test]
+    fn or2_parser() {
+        let constant1 = regex(Regex::new("^x").unwrap());
+        let constant2 = constant(String::from("123"));
+        let input = "12345";
+        assert_eq!(
+            or_(constant1, constant2).parse(input),
+            Ok(("12345", String::from("123")))
+        );
+
+        let constant2 = constant("1");
+        let constant3 = constant("2");
+        assert_eq!(or_(constant2, constant3).parse(input), Ok(("12345", "1")));
     }
 
     #[test]

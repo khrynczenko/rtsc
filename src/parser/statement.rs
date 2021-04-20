@@ -1,5 +1,4 @@
 use crate::parser::combinators as cmb;
-use crate::parser::combinators::OrValue;
 use crate::parser::combinators::Parser;
 use crate::parser::expression as exp;
 
@@ -7,49 +6,14 @@ use crate::ast::Ast;
 
 pub fn make_statement_parser<'a>() -> impl Parser<'a, Ast> {
     |input: &'a str| {
-        cmb::map(
-            cmb::or(
-                make_return_parser(),
-                cmb::or(
-                    make_if_parser(),
-                    cmb::or(
-                        make_while_parser(),
-                        cmb::or(
-                            make_var_parser(),
-                            cmb::or(
-                                make_assignment_parser(),
-                                cmb::or(
-                                    make_block_parser(),
-                                    cmb::or(make_function_parser(), make_expression_parser()),
-                                ),
-                            ),
-                        ),
-                    ),
-                ),
-            ),
-            |return_or_other| match return_or_other {
-                OrValue::Lhs(return_node) => return_node,
-                OrValue::Rhs(if_or_while) => match if_or_while {
-                    OrValue::Lhs(if_node) => if_node,
-                    OrValue::Rhs(while_or_var) => match while_or_var {
-                        OrValue::Lhs(while_node) => while_node,
-                        OrValue::Rhs(var_or_assignment) => match var_or_assignment {
-                            OrValue::Lhs(var_node) => var_node,
-                            OrValue::Rhs(asignment_or_block) => match asignment_or_block {
-                                OrValue::Lhs(assignment_node) => assignment_node,
-                                OrValue::Rhs(block_or_function) => match block_or_function {
-                                    OrValue::Lhs(block_node) => block_node,
-                                    OrValue::Rhs(function_or_expr) => {
-                                        function_or_expr.extract().clone()
-                                    }
-                                },
-                            },
-                        },
-                    },
-                },
-            },
-        )
-        .parse(input)
+        let parser = cmb::or_(make_return_parser(), make_if_parser());
+        let parser = cmb::or_(parser, make_while_parser());
+        let parser = cmb::or_(parser, make_var_parser());
+        let parser = cmb::or_(parser, make_assignment_parser());
+        let parser = cmb::or_(parser, make_block_parser());
+        let parser = cmb::or_(parser, make_function_parser());
+        let parser = cmb::or_(parser, make_expression_parser());
+        parser.parse(input)
     }
 }
 

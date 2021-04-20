@@ -128,45 +128,24 @@ pub fn make_call_parser<'a>() -> impl Parser<'a, Ast> {
 
 // scalar <- undefined | bool | ID, NUMBER
 pub fn make_scalar_parser<'a>() -> impl Parser<'a, Ast> {
-    let undefined_or_bool = cmb::or(make_undefined_parser_(), make_bool_parser());
-    let bool_or_id = cmb::or(undefined_or_bool, make_identifier_parser());
-    let undefined_or_bool_or_id_or_number = cmb::or(bool_or_id, make_number_parser());
-    cmb::map(undefined_or_bool_or_id_or_number, |any| match any {
-        OrValue::Lhs(bool_or_id) => match bool_or_id {
-            OrValue::Lhs(undefined_or_bool) => match undefined_or_bool {
-                OrValue::Lhs(undefined) => undefined,
-                OrValue::Rhs(b) => b,
-            },
-            OrValue::Rhs(id) => id,
-        },
-        OrValue::Rhs(number) => number,
-    })
+    let undefined_or_bool = cmb::or_(make_undefined_parser_(), make_bool_parser());
+    let bool_or_id = cmb::or_(undefined_or_bool, make_identifier_parser());
+    let undefined_or_bool_or_id_or_number = cmb::or_(bool_or_id, make_number_parser());
+    undefined_or_bool_or_id_or_number
 }
 
 // atom <- call | scalar | LEFT_PAREN expression RIGHT_PAREN
 pub fn make_atom_parser<'a>() -> impl Parser<'a, Ast> {
-    cmb::bind(
-        cmb::or(
-            make_call_parser(),
-            cmb::or(
-                make_scalar_parser(),
-                cmb::and(
-                    make_left_paren_parser(),
-                    cmb::bind(make_expression_parser(), |e| {
-                        cmb::and(make_right_paren_parser(), cmb::constant(e))
-                    }),
-                ),
-            ),
-        ),
-        |e| match e {
-            OrValue::Lhs(call) => cmb::constant(call),
-            OrValue::Rhs(scalar_or_expr) => match scalar_or_expr {
-                OrValue::Lhs(scalar) => cmb::constant(scalar),
-                OrValue::Rhs(expr) => cmb::constant(expr),
-            },
-        },
-    )
+    let call_or_scalar_parser = cmb::or_(make_call_parser(), make_scalar_parser());
+    let expr_in_parens_parser = cmb::and(
+        make_left_paren_parser(),
+        cmb::bind(make_expression_parser(), |e| {
+            cmb::and(make_right_paren_parser(), cmb::constant(e))
+        }),
+    );
+    cmb::or_(call_or_scalar_parser, expr_in_parens_parser)
 }
+
 // unary <- NOT? atom
 pub fn make_unary_parser<'a>() -> impl Parser<'a, Ast> {
     cmb::bind(cmb::maybe(make_not_parser()), move |not| {
