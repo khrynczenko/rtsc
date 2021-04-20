@@ -25,6 +25,7 @@ impl Environment {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Ast {
+    Null,
     Undefined,
     Number(i32),
     Bool(bool),
@@ -74,6 +75,10 @@ impl Ast {
                 }
             }
             Ast::Undefined => {
+                buffer.push('\n');
+                buffer.push_str("    mov r0, #0\n");
+            }
+            Ast::Null => {
                 buffer.push('\n');
                 buffer.push_str("    mov r0, #0\n");
             }

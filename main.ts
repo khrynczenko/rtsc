@@ -62,4 +62,5 @@ function main() {
     assert(true);
     assert(!false);
     assert(!undefined);
+    assert(!null);
 }

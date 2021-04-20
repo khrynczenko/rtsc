@@ -29,6 +29,7 @@ token_parser! {make_if_parser, "^if"}
 token_parser! {make_true_parser, "^true"}
 token_parser! {make_false_parser, "^false"}
 token_parser! {make_undefined_parser, "^undefined"}
+token_parser! {make_null_parser, "^null"}
 token_parser! {make_else_parser, "^else"}
 token_parser! {make_return_parser, "^return"}
 token_parser! {make_while_parser, "^while"}
@@ -88,6 +89,10 @@ pub fn make_undefined_parser_<'a>() -> impl Parser<'a, Ast> {
     cmb::and(make_undefined_parser(), cmb::constant(Ast::Undefined))
 }
 
+pub fn make_null_parser_<'a>() -> impl Parser<'a, Ast> {
+    cmb::and(make_null_parser(), cmb::constant(Ast::Null))
+}
+
 pub fn make_identifier_parser<'a>() -> impl Parser<'a, Ast> {
     cmb::map(make_id_string_parser(), Ast::Identifier)
 }
@@ -126,12 +131,13 @@ pub fn make_call_parser<'a>() -> impl Parser<'a, Ast> {
     })
 }
 
-// scalar <- undefined | bool | ID, NUMBER
+// scalar <- null | undefined | bool | ID, NUMBER
 pub fn make_scalar_parser<'a>() -> impl Parser<'a, Ast> {
-    let undefined_or_bool = cmb::or_(make_undefined_parser_(), make_bool_parser());
-    let bool_or_id = cmb::or_(undefined_or_bool, make_identifier_parser());
-    let undefined_or_bool_or_id_or_number = cmb::or_(bool_or_id, make_number_parser());
-    undefined_or_bool_or_id_or_number
+    let parser = cmb::or_(make_null_parser_(), make_undefined_parser_());
+    let parser = cmb::or_(parser, make_bool_parser());
+    let parser = cmb::or_(parser, make_identifier_parser());
+    let parser = cmb::or_(parser, make_number_parser());
+    parser
 }
 
 // atom <- call | scalar | LEFT_PAREN expression RIGHT_PAREN
@@ -279,6 +285,16 @@ mod tests {
         assert_eq!(true_parsed, Ast::Bool(true));
         assert_eq!(false_next_input, "");
         assert_eq!(false_parsed, Ast::Bool(false));
+    }
+
+    #[test]
+    fn null_parser() {
+        let input = "null  //xx";
+        let parser = make_null_parser_();
+        let next_input = parser.parse(input).unwrap().0;
+        let parsed = parser.parse(input).unwrap().1;
+        assert_eq!(next_input, "");
+        assert_eq!(parsed, Ast::Null);
     }
 
     #[test]
