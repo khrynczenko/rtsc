@@ -63,4 +63,11 @@ function main() {
     assert(!false);
     assert(!undefined);
     assert(!null);
+
+    var a = [10, 20, 30];
+    assert(a[0] == 10);
+    assert(a[1] == 20);
+    assert(a[2] == 30);
+    assert(a[3] == undefined);  // Bounds checking.
+    assert(length(a) == 3);
 }

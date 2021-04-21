@@ -30,6 +30,7 @@ token_parser! {make_true_parser, "^true"}
 token_parser! {make_false_parser, "^false"}
 token_parser! {make_undefined_parser, "^undefined"}
 token_parser! {make_null_parser, "^null"}
+token_parser! {make_length_parser, "^length"}
 token_parser! {make_else_parser, "^else"}
 token_parser! {make_return_parser, "^return"}
 token_parser! {make_while_parser, "^while"}
@@ -41,6 +42,8 @@ token_parser! {make_left_paren_parser, r"^\("}
 token_parser! {make_right_paren_parser, r"^\)"}
 token_parser! {make_left_brace_parser, r"^\{"}
 token_parser! {make_right_brace_parser, r"^\}"}
+token_parser! {make_left_bracket_parser, r"^\["}
+token_parser! {make_right_bracket_parser, r"^\]"}
 token_parser! {make_not_parser, r"^!"}
 token_parser! {make_equal_parser, r"^=="}
 token_parser! {make_not_equal_parser, r"^!="}
@@ -97,6 +100,46 @@ pub fn make_identifier_parser<'a>() -> impl Parser<'a, Ast> {
     cmb::map(make_id_string_parser(), Ast::Identifier)
 }
 
+// array_literal <- LEFT_BRACKET args RIGHT_BRACKET
+pub fn make_array_literal_parser<'a>() -> impl Parser<'a, Ast> {
+    cmb::bind(
+        cmb::and(make_left_bracket_parser(), make_args_parser()),
+        |elements| {
+            cmb::and(
+                make_right_bracket_parser(),
+                cmb::constant(Ast::ArrayLiteral(elements)),
+            )
+        },
+    )
+}
+
+// array_lookup <- ID LEFT_BRACKET expression RIGHT_BRACKET
+pub fn make_array_lookup_parser<'a>() -> impl Parser<'a, Ast> {
+    cmb::bind(make_identifier_parser(), move |id| {
+        cmb::bind(
+            cmb::and(make_left_bracket_parser(), make_expression_parser()),
+            move |index| {
+                cmb::and(
+                    make_right_bracket_parser(),
+                    cmb::constant(Ast::ArrayLookup(Box::new(id.clone()), Box::new(index))),
+                )
+            },
+        )
+    })
+}
+
+// array_length <- length LEFT_PAREN expression RIGH_PAREN
+pub fn make_array_length_parser<'a>() -> impl Parser<'a, Ast> {
+    let parser = cmb::and(make_length_parser(), make_left_paren_parser());
+    let parser = cmb::and(parser, make_expression_parser());
+    cmb::bind(parser, |array| {
+        cmb::and(
+            make_right_paren_parser(),
+            cmb::constant(Ast::ArrayLength(Box::new(array))),
+        )
+    })
+}
+
 pub fn make_args_parser<'a>() -> impl Parser<'a, Vec<Ast>> {
     cmb::bind(cmb::maybe(make_expression_parser()), |arg| {
         cmb::bind(
@@ -140,16 +183,19 @@ pub fn make_scalar_parser<'a>() -> impl Parser<'a, Ast> {
     parser
 }
 
-// atom <- call | scalar | LEFT_PAREN expression RIGHT_PAREN
+// atom <- array_length | array_literal | array_lookup | call | scalar | LEFT_PAREN expression RIGHT_PAREN
 pub fn make_atom_parser<'a>() -> impl Parser<'a, Ast> {
-    let call_or_scalar_parser = cmb::or_(make_call_parser(), make_scalar_parser());
+    let parser = cmb::or_(make_array_length_parser(), make_array_literal_parser());
+    let parser = cmb::or_(parser, make_array_lookup_parser());
+    let parser = cmb::or_(parser, make_call_parser());
+    let parser = cmb::or_(parser, make_scalar_parser());
     let expr_in_parens_parser = cmb::and(
         make_left_paren_parser(),
         cmb::bind(make_expression_parser(), |e| {
             cmb::and(make_right_paren_parser(), cmb::constant(e))
         }),
     );
-    cmb::or_(call_or_scalar_parser, expr_in_parens_parser)
+    cmb::or_(parser, expr_in_parens_parser)
 }
 
 // unary <- NOT? atom
@@ -308,6 +354,47 @@ mod tests {
     }
 
     #[test]
+    fn array_literal_parser() {
+        let input = "[1,2]  //xx";
+        let parser = make_array_literal_parser();
+        let next_input = parser.parse(input).unwrap().0;
+        let parsed = parser.parse(input).unwrap().1;
+        assert_eq!(next_input, "");
+        assert_eq!(
+            parsed,
+            Ast::ArrayLiteral(vec![Ast::Number(1), Ast::Number(2)])
+        );
+    }
+    #[test]
+    fn array_lookup_parser() {
+        let input = "x[1]  //xx";
+        let parser = make_array_lookup_parser();
+        let next_input = parser.parse(input).unwrap().0;
+        let parsed = parser.parse(input).unwrap().1;
+        assert_eq!(next_input, "");
+        assert_eq!(
+            parsed,
+            Ast::ArrayLookup(
+                Box::new(Ast::Identifier(String::from("x"))),
+                Box::new(Ast::Number(1))
+            )
+        );
+    }
+
+    #[test]
+    fn array_length_parser() {
+        let input = "length(x)  //xx";
+        let parser = make_array_length_parser();
+        let next_input = parser.parse(input).unwrap().0;
+        let parsed = parser.parse(input).unwrap().1;
+        assert_eq!(next_input, "");
+        assert_eq!(
+            parsed,
+            Ast::ArrayLength(Box::new(Ast::Identifier(String::from("x"))))
+        );
+    }
+
+    #[test]
     fn args_parser() {
         let input = "arg1, arg2, arg3  //xx";
         let parser = make_args_parser();
@@ -388,6 +475,33 @@ mod tests {
         let (next_input, parsed) = parser.parse(input).unwrap();
         assert_eq!(next_input, "");
         assert_eq!(parsed, Ast::Number(123));
+    }
+
+    #[test]
+    fn atom_parser_for_array_literal() {
+        let input = "[1,2] //xx";
+        let parser = make_atom_parser();
+        let (next_input, parsed) = parser.parse(input).unwrap();
+        assert_eq!(next_input, "");
+        assert_eq!(
+            parsed,
+            Ast::ArrayLiteral(vec![Ast::Number(1), Ast::Number(2)])
+        );
+    }
+
+    #[test]
+    fn atom_parser_for_array_lookup() {
+        let input = "x[1] //xx";
+        let parser = make_atom_parser();
+        let (next_input, parsed) = parser.parse(input).unwrap();
+        assert_eq!(next_input, "");
+        assert_eq!(
+            parsed,
+            Ast::ArrayLookup(
+                Box::new(Ast::Identifier(String::from("x"))),
+                Box::new(Ast::Number(1))
+            )
+        );
     }
 
     #[test]
