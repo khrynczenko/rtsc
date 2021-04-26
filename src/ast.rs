@@ -1,26 +1,13 @@
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
+
+use crate::phases::codegen::CodeGenerator;
+use crate::phases::codegen::Environment;
 
 static LABEL: AtomicUsize = AtomicUsize::new(0);
 
 fn make_label() -> String {
     let value = LABEL.fetch_add(1, Ordering::SeqCst);
     format!(".L{}", value)
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct Environment {
-    locals: HashMap<String, isize>,
-    next_local_offset: isize,
-}
-
-impl Environment {
-    pub fn new(locals: HashMap<String, isize>, next_local_offset: isize) -> Self {
-        Environment {
-            locals,
-            next_local_offset,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,7 +56,10 @@ impl Ast {
         buffer.push_str("    mov r0, #0\n");
         buffer.push_str("    pop {fp, pc}\n");
     }
-    pub fn emit(&self, buffer: &mut String, env: &mut Environment) {
+}
+
+impl CodeGenerator for Ast {
+    fn emit(&self, buffer: &mut String, env: &mut Environment) {
         match self {
             Ast::Block(statements) => {
                 buffer.push('\n');

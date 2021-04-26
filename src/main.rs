@@ -1,11 +1,12 @@
 mod ast;
 mod parser;
+mod phases;
 
 use std::env;
 use std::fs;
 
-use ast::Environment;
 use parser::combinators::Parser;
+use phases::codegen::{CodeGenerator, Environment};
 
 fn main() {
     let source = fs::read_to_string(env::args().nth(1).unwrap()).unwrap();
