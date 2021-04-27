@@ -6,7 +6,7 @@ use std::env;
 use std::fs;
 
 use parser::combinators::Parser;
-use phases::codegen::{CodeGenerator, Environment};
+use phases::codegen::{Arm32Generator, CodeGenerator, Environment};
 
 fn main() {
     let source = fs::read_to_string(env::args().nth(1).unwrap()).unwrap();
@@ -14,6 +14,6 @@ fn main() {
     let ast = parser.parse(&source).unwrap().1;
     let mut output_asm = String::new();
     let mut env = Environment::default();
-    ast.emit(&mut output_asm, &mut env);
+    Arm32Generator::new(ast).emit(&mut output_asm, &mut env);
     print!("{}", output_asm);
 }
