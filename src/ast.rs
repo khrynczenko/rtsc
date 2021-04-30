@@ -1,3 +1,5 @@
+use crate::types::Type;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Ast {
     Null,
@@ -19,7 +21,7 @@ pub enum Ast {
     Return(Box<Ast>),
     Block(Vec<Ast>),
     If(Box<Ast>, Box<Ast>, Box<Ast>),
-    Function(String, Vec<String>, Box<Ast>),
+    Function(String, Type, Box<Ast>),
     Var(String, Box<Ast>),
     Assignment(String, Box<Ast>),
     While(Box<Ast>, Box<Ast>),

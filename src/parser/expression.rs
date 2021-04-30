@@ -1,9 +1,9 @@
 use regex::Regex;
 
+use crate::ast::Ast;
 use crate::parser::combinators as cmb;
 use crate::parser::combinators::{OrValue, Parser};
-
-use crate::ast::Ast;
+use crate::types::Type;
 
 pub type Comment = String;
 pub type Whitespace = String;
@@ -24,6 +24,10 @@ pub fn make_token_parser<'a>(pattern: Regex) -> impl Parser<'a, String> {
     })
 }
 
+token_parser! {make_bool_keyword_parser, "^boolean"}
+token_parser! {make_number_keyword_parser, "^number"}
+token_parser! {make_void_keyword_parser, "^void"}
+token_parser! {make_array_keyword_parser, "^array"}
 token_parser! {make_function_parser, "^function"}
 token_parser! {make_if_parser, "^if"}
 token_parser! {make_true_parser, "^true"}
@@ -37,7 +41,10 @@ token_parser! {make_while_parser, "^while"}
 token_parser! {make_var_parser, "^var"}
 token_parser! {make_assign_parser, "^="}
 token_parser! {make_comma_parser, "^,"}
+token_parser! {make_colon_parser, "^:"}
 token_parser! {make_semicolon_parser, "^;"}
+token_parser! {make_less_parser, "^<"}
+token_parser! {make_greater_parser, "^>"}
 token_parser! {make_left_paren_parser, r"^\("}
 token_parser! {make_right_paren_parser, r"^\)"}
 token_parser! {make_left_brace_parser, r"^\{"}
@@ -63,6 +70,44 @@ pub fn make_ignored_parser<'a>() -> impl Parser<'a, Vec<OrValue<Whitespace, Comm
     let comment_regex = Regex::new(r"^//.*").unwrap();
     let comment_parser = cmb::regex(comment_regex);
     cmb::zero_or_more(cmb::or(whitespace_parser, comment_parser))
+}
+
+// type <- ARRAY LESS_THAN type GREATER_THAN
+pub fn make_array_type_parser<'a>() -> impl Parser<'a, Type> {
+    |input| {
+        let parser = cmb::and(make_array_keyword_parser(), make_less_parser());
+        let parser = cmb::and(
+            parser,
+            cmb::bind(make_type_parser(), |subtype| {
+                cmb::and(
+                    make_greater_parser(),
+                    cmb::constant(Type::Array {
+                        element_type: Box::new(subtype),
+                    }),
+                )
+            }),
+        );
+        parser.parse(input)
+    }
+}
+
+// type <- VOID | BOOLEAN | NUMBER | array_type
+pub fn make_type_parser<'a>() -> impl Parser<'a, Type> {
+    let parser = cmb::or_(make_void_keyword_parser(), make_bool_keyword_parser());
+    let parser = cmb::or_(parser, make_number_keyword_parser());
+    let parser = cmb::or(parser, make_array_type_parser());
+    cmb::bind(parser, move |or| match or {
+        OrValue::Lhs(value) => {
+            let type_ = match value.as_str() {
+                "void" => Type::Void,
+                "boolean" => Type::Boolean,
+                "number" => Type::Number,
+                _ => unreachable!(),
+            };
+            cmb::constant(type_)
+        }
+        OrValue::Rhs(array) => cmb::constant(array),
+    })
 }
 
 pub fn make_number_parser<'a>() -> impl Parser<'a, Ast> {
@@ -176,11 +221,13 @@ pub fn make_call_parser<'a>() -> impl Parser<'a, Ast> {
 
 // scalar <- null | undefined | bool | ID, NUMBER
 pub fn make_scalar_parser<'a>() -> impl Parser<'a, Ast> {
-    let parser = cmb::or_(make_null_parser_(), make_undefined_parser_());
-    let parser = cmb::or_(parser, make_bool_parser());
-    let parser = cmb::or_(parser, make_identifier_parser());
-    let parser = cmb::or_(parser, make_number_parser());
-    parser
+    |input| {
+        let parser = cmb::or_(make_null_parser_(), make_undefined_parser_());
+        let parser = cmb::or_(parser, make_bool_parser());
+        let parser = cmb::or_(parser, make_identifier_parser());
+        let parser = cmb::or_(parser, make_number_parser());
+        parser.parse(input)
+    }
 }
 
 // atom <- array_length | array_literal | array_lookup | call | scalar | LEFT_PAREN expression RIGHT_PAREN
@@ -428,6 +475,20 @@ mod tests {
                 Ast::Identifier(String::from("arg2")),
                 Ast::Identifier(String::from("arg3"))
             ]
+        );
+    }
+
+    #[test]
+    fn type_parser() {
+        let input = "array<number> //xx";
+        let parser = make_type_parser();
+        let (next_input, parsed) = parser.parse(input).unwrap();
+        assert_eq!(next_input, "");
+        assert_eq!(
+            parsed,
+            Type::Array {
+                element_type: Box::new(Type::Number)
+            }
         );
     }
 

@@ -11,3 +11,4 @@
 pub mod ast;
 pub mod parser;
 pub mod phases;
+pub mod types;

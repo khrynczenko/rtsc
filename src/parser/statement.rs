@@ -3,6 +3,7 @@ use crate::parser::combinators::Parser;
 use crate::parser::expression as exp;
 
 use crate::ast::Ast;
+use crate::types::Type;
 
 pub fn make_statement_parser<'a>() -> impl Parser<'a, Ast> {
     |input: &'a str| {
@@ -129,23 +130,38 @@ pub fn make_block_parser<'a>() -> impl Parser<'a, Ast> {
     )
 }
 
-// parameters_statement <- (ID (COMMA ID)*)?
-pub fn make_parameters_parser<'a>() -> impl Parser<'a, Option<Vec<String>>> {
-    cmb::maybe(cmb::bind(exp::make_id_string_parser(), move |first_id| {
-        cmb::bind(
-            cmb::zero_or_more(cmb::and(
-                exp::make_comma_parser(),
-                exp::make_id_string_parser(),
-            )),
-            move |rest_ids| {
-                cmb::constant({
-                    let mut v = vec![first_id.clone()];
-                    v.extend(rest_ids);
-                    v
-                })
-            },
-        )
-    }))
+pub fn make_optional_type_annotation_parser<'a>() -> impl Parser<'a, Option<Type>> {
+    cmb::maybe(cmb::and(exp::make_colon_parser(), exp::make_type_parser()))
+}
+
+pub fn make_parameter_parser<'a>() -> impl Parser<'a, (String, Option<Type>)> {
+    cmb::bind(exp::make_id_string_parser(), move |name| {
+        cmb::bind(make_optional_type_annotation_parser(), move |opt_type| {
+            cmb::constant((name.clone(), opt_type))
+        })
+    })
+}
+
+pub fn make_parameters_parser<'a>() -> impl Parser<'a, Vec<(String, Type)>> {
+    cmb::bind(
+        cmb::maybe(make_parameter_parser()),
+        move |opt_first_param| {
+            cmb::bind(
+                cmb::zero_or_more(cmb::and(exp::make_comma_parser(), make_parameter_parser())),
+                move |rest| {
+                    if let Some((fst_name, fst_type)) = opt_first_param.clone() {
+                        let mut output_params = vec![(fst_name, fst_type.unwrap_or(Type::Number))];
+                        for param in rest {
+                            output_params.push((param.0, param.1.unwrap_or(Type::Number)));
+                        }
+                        cmb::constant(output_params)
+                    } else {
+                        cmb::constant(vec![])
+                    }
+                },
+            )
+        },
+    )
 }
 
 // function_statement <- FUNCTION ID LEFT_PAREN paramters RIGHT_PAREN block_statement
@@ -157,23 +173,27 @@ pub fn make_function_parser<'a>() -> impl Parser<'a, Ast> {
                 exp::make_left_paren_parser(),
                 cmb::bind(make_parameters_parser(), move |parameters| {
                     let function_id = function_id.clone();
+                    let parameters = parameters;
                     cmb::and(
                         exp::make_right_paren_parser(),
-                        cmb::bind(make_block_parser(), move |block| {
-                            if let Some(ref params) = parameters {
-                                cmb::constant(Ast::Function(
-                                    function_id.clone(),
-                                    params.clone(),
-                                    Box::new(block),
-                                ))
-                            } else {
-                                cmb::constant(Ast::Function(
-                                    function_id.clone(),
-                                    vec![],
-                                    Box::new(block),
-                                ))
-                            }
-                        }),
+                        cmb::bind(
+                            make_optional_type_annotation_parser(),
+                            move |ret_type_annot| {
+                                let parameters = parameters.clone();
+                                let function_id = function_id.clone();
+                                cmb::bind(make_block_parser(), move |block| {
+                                    let type_ = Type::Function {
+                                        parameter_types: parameters.iter().cloned().collect(),
+                                        return_type: Box::new(
+                                            ret_type_annot.clone().unwrap_or(Type::Number),
+                                        ),
+                                    };
+                                    let f =
+                                        Ast::Function(function_id.clone(), type_, Box::new(block));
+                                    cmb::constant(f)
+                                })
+                            },
+                        ),
                     )
                 }),
             )
@@ -273,12 +293,36 @@ mod tests {
         let parser = make_parameters_parser();
         let (next_input, parsed) = parser.parse(input).unwrap();
         assert_eq!(next_input, "");
-        assert_eq!(parsed.unwrap(), vec!["x", "y", "z"]);
+        assert_eq!(
+            parsed,
+            vec![
+                (String::from("x"), Type::Number),
+                (String::from("y"), Type::Number),
+                (String::from("z"), Type::Number)
+            ]
+        );
+    }
+
+    #[test]
+    fn parameters_with_types_parser() {
+        let input = "x: number, y: boolean, z: void , w: number//xx";
+        let parser = make_parameters_parser();
+        let (next_input, parsed) = parser.parse(input).unwrap();
+        assert_eq!(next_input, "");
+        assert_eq!(
+            parsed,
+            vec![
+                (String::from("x"), Type::Number),
+                (String::from("y"), Type::Boolean),
+                (String::from("z"), Type::Void),
+                (String::from("w"), Type::Number)
+            ]
+        );
     }
 
     #[test]
     fn function_parser() {
-        let input = "function f(x, y, z) { 1; } //xx";
+        let input = "function f(x:number, y:boolean, z: number, w: boolean) { 1; } //xx";
         let parser = make_function_parser();
         let (next_input, parsed) = parser.parse(input).unwrap();
         assert_eq!(next_input, "");
@@ -286,7 +330,18 @@ mod tests {
             parsed,
             Ast::Function(
                 String::from("f"),
-                vec![String::from("x"), String::from("y"), String::from("z"),],
+                Type::Function {
+                    parameter_types: ([
+                        (String::from("x"), Type::Number),
+                        (String::from("y"), Type::Boolean),
+                        (String::from("z"), Type::Number),
+                        (String::from("w"), Type::Boolean)
+                    ])
+                    .iter()
+                    .cloned()
+                    .collect(),
+                    return_type: Box::new(Type::Number)
+                },
                 Box::new(Ast::Block(vec![Ast::Number(1)]))
             )
         );
@@ -302,7 +357,10 @@ mod tests {
             parsed,
             Ast::Function(
                 String::from("f"),
-                vec![],
+                Type::Function {
+                    parameter_types: ([]).iter().cloned().collect(),
+                    return_type: Box::new(Type::Number)
+                },
                 Box::new(Ast::Block(vec![Ast::Number(1)]))
             )
         );

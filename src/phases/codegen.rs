@@ -1,7 +1,8 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::ast::Ast;
+use crate::types::Type;
 
 static LABEL: AtomicUsize = AtomicUsize::new(0);
 
@@ -12,12 +13,12 @@ fn make_label() -> String {
 
 #[derive(Debug, Clone, Default)]
 pub struct Environment {
-    pub locals: HashMap<String, isize>,
+    pub locals: BTreeMap<String, isize>,
     pub next_local_offset: isize,
 }
 
 impl Environment {
-    pub fn new(locals: HashMap<String, isize>, next_local_offset: isize) -> Self {
+    pub fn new(locals: BTreeMap<String, isize>, next_local_offset: isize) -> Self {
         Environment {
             locals,
             next_local_offset,
@@ -233,17 +234,33 @@ impl Arm32Generator {
                     panic!("Tried to use an undefined name {}", name);
                 }
             }
-            Ast::Function(name, parameters, body) => {
-                buffer.push('\n');
-                if parameters.len() > 4 {
+            Ast::Function(name, function_type, body) => {
+                let (parameter_types, _return_type) = match function_type {
+                    Type::Function {
+                        parameter_types,
+                        return_type,
+                    } => (parameter_types, return_type),
+                    _ => unreachable!(),
+                };
+
+                if parameter_types.len() > 4 {
                     panic!("More than four arguments are not supported");
                 }
+
+                buffer.push('\n');
 
                 buffer.push('\n');
                 buffer.push_str(&format!(".global {}\n", name));
                 buffer.push_str(&format!("{}:\n", name));
                 Arm32Generator::emit_prologue(buffer);
-                let mut env = Arm32Generator::make_initial_function_environment(parameters);
+                let mut env = Arm32Generator::make_initial_function_environment(
+                    parameter_types
+                        .iter()
+                        .map(|(x, _)| x)
+                        .cloned()
+                        .collect::<Vec<String>>()
+                        .as_ref(),
+                );
                 self.emit_ast(body, buffer, &mut env);
                 Arm32Generator::emit_epilogue(buffer);
             }

@@ -22,6 +22,7 @@ pub fn make_full_parser<'a>() -> impl Parser<'a, Ast> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::Type;
 
     #[test]
     fn full_parser() {
@@ -41,7 +42,13 @@ mod tests {
             parsed,
             Ast::Block(vec![Ast::Function(
                 String::from("factorial"),
-                vec![String::from("n")],
+                Type::Function {
+                    parameter_types: [(String::from("n"), Type::Number)]
+                        .iter()
+                        .cloned()
+                        .collect(),
+                    return_type: Box::new(Type::Number)
+                },
                 Box::new(Ast::Block(vec![
                     Ast::Var(String::from("result"), Box::new(Ast::Number(1))),
                     Ast::While(
