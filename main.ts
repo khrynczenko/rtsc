@@ -25,6 +25,19 @@ function factorial(n: number) {
     }
 }
 
+function fibonacci(nth: number) {
+    if (nth == 0) {
+        return 0;
+    } else {
+        if (nth == 1) {
+            return 1;
+        } else {
+            return fibonacci(nth - 1) + fibonacci(nth - 2);
+        }
+    }
+}
+
+
 function main() {
     assert(true);
     assert(42 == 4 + 2 * (12 - 2) + 3 * (5 + 1));
@@ -38,6 +51,7 @@ function main() {
     assert_four_parameters_work(1, 2, 3, 4);
     assert(add_one(1) == 2);
     assert(factorial(5) == 120); // 5 * 4 * 3 * 2 * 1 * 1;
+    assert(fibonacci(3) == 2);
 
     var a = 1;
     assert(a == 1);
