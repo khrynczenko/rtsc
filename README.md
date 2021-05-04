@@ -6,7 +6,7 @@ The **rtsc** is a compiler written in rust for the subset of the TypeScript
 language that generates ARM32 assembly. It is based on the book written by
 Vladimir Keleshev titled "Compiling to Assembly".
 
-It is currently in a *work in progress* state.
+I do not intend to work on this project. I did it as a learning exercise.
 
 ## How to use?
 
@@ -24,8 +24,9 @@ There is an exemplary source file (`main.ts`) that can be compiled using the
 ## What are the differences in contrast to the book implementation?
 
 - I used an `enum` to represent different AST nodes, instead of separate classes
-that would implement a trait.  
+that would implement a trait.
 - I created parser combinators using functions only, as opposed to having
 `struct` with methods. This was a bad idea because the resulting code is
 terrible and using functions leads to many weird things. In essence, the parser
 is terrible but it works. I might rewrite it at some point.
+- I didn't implement garbage colector.
