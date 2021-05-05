@@ -6,7 +6,7 @@ The **rtsc** is a compiler written in rust for the subset of the TypeScript
 language that generates ARM32 assembly. It is based on the book written by
 Vladimir Keleshev titled "Compiling to Assembly".
 
-I do not intend to work on this project. I did it as a learning exercise.
+I do not intend to further develop this project. I did it as a learning exercise.
 
 ## How to use?
 
